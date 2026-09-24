@@ -13,14 +13,14 @@ export function CancelEventButton({ eventId }: { eventId: string }) {
     return (
       <button
         onClick={() => setConfirming(true)}
-        className="w-full rounded-lg px-4 py-2.5 font-semibold text-danger hover:bg-danger-soft"
+        className="w-full rounded-xl px-4 py-2.5 font-semibold text-danger hover:bg-danger-soft"
       >
         Cancel event
       </button>
     );
   }
   return (
-    <div className="space-y-2 rounded-lg bg-danger-soft p-3">
+    <div className="space-y-2 rounded-xl bg-danger-soft p-3">
       <p className="text-sm text-danger">Cancel this event for everyone? Attendees will see it as cancelled.</p>
       <div className="flex gap-2">
         <button
@@ -31,11 +31,11 @@ export function CancelEventButton({ eventId }: { eventId: string }) {
               if (res?.error) setError(res.error);
             })
           }
-          className="flex-1 rounded-lg bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          className="flex-1 rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
           {pending ? 'Cancelling…' : 'Yes, cancel it'}
         </button>
-        <button onClick={() => setConfirming(false)} className="flex-1 rounded-lg px-3 py-2 text-sm font-semibold">
+        <button onClick={() => setConfirming(false)} className="flex-1 rounded-xl px-3 py-2 text-sm font-semibold">
           Keep it
         </button>
       </div>

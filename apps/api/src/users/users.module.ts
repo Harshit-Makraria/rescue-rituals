@@ -2,7 +2,7 @@ import { Controller, Get, Injectable, Module, NotFoundException, UseGuards } fro
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guards';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
-import { hostSelect, toEventResponse } from '../events/event.mapper';
+import { eventInclude, toEventResponse } from '../events/event.mapper';
 import { PrismaService } from '../prisma/prisma.service';
 import { MeResponse, MyEventsResponse } from './users.dto';
 
@@ -35,7 +35,7 @@ class UsersService {
   async hosting(userId: string): Promise<MyEventsResponse> {
     const events = await this.prisma.event.findMany({
       where: { creatorId: userId, deletedAt: null },
-      include: hostSelect,
+      include: eventInclude,
       orderBy: { startsAt: 'desc' },
       take: 100,
     });
@@ -46,7 +46,7 @@ class UsersService {
   async rsvps(userId: string): Promise<MyEventsResponse> {
     const rsvps = await this.prisma.rsvp.findMany({
       where: { userId, status: { in: ['going', 'waitlisted'] }, event: { deletedAt: null } },
-      include: { event: { include: hostSelect } },
+      include: { event: { include: eventInclude } },
       orderBy: { event: { startsAt: 'asc' } },
       take: 100,
     });

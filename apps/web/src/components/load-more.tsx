@@ -6,7 +6,7 @@ import type { EventItem } from '@/lib/api';
 import { EventCard } from './event-card';
 
 /** Cursor pagination: fetches the next page through a server action and appends it. */
-export function LoadMore({ initialCursor, q }: { initialCursor: string | null; q: string }) {
+export function LoadMore({ initialCursor, q, to }: { initialCursor: string | null; q: string; to?: string }) {
   const [items, setItems] = useState<EventItem[]>([]);
   const [cursor, setCursor] = useState(initialCursor);
   const [pending, startTransition] = useTransition();
@@ -17,17 +17,17 @@ export function LoadMore({ initialCursor, q }: { initialCursor: string | null; q
         <EventCard key={event.id} event={event} />
       ))}
       {cursor && (
-        <div className="md:col-span-2">
+        <div className="border-t border-line p-4">
           <button
             onClick={() =>
               startTransition(async () => {
-                const page = await loadMoreEvents(cursor, q);
+                const page = await loadMoreEvents(cursor, q, to);
                 setItems((prev) => [...prev, ...page.items]);
                 setCursor(page.nextCursor);
               })
             }
             disabled={pending}
-            className="w-full rounded-lg border border-line bg-surface py-3 font-semibold hover:border-accent disabled:opacity-60"
+            className="w-full rounded-xl border border-line py-2.5 text-sm font-semibold text-muted hover:border-accent hover:text-ink disabled:opacity-60"
           >
             {pending ? 'Loading…' : 'Load more events'}
           </button>

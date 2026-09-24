@@ -4,3 +4,4 @@ process.env.DATABASE_URL =
 process.env.JWT_ACCESS_SECRET ??= 'test-access-secret';
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret';
 process.env.THROTTLE_DISABLED = 'true';
+process.env.REMINDERS_DISABLED = 'true'; // tests trigger the job directly

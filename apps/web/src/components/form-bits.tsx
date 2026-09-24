@@ -8,7 +8,7 @@ export function SubmitButton({ children, pendingText }: { children: React.ReactN
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-lg bg-accent px-4 py-3 font-semibold text-accent-ink hover:opacity-90 disabled:opacity-60"
+      className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink shadow-card hover:opacity-90 disabled:opacity-60"
     >
       {pending ? pendingText : children}
     </button>
@@ -34,12 +34,12 @@ export function Field({
 }
 
 export const inputClass =
-  'mt-1.5 block w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none';
+  'mt-1.5 block w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none';
 
 export function FormError({ error }: { error?: string }) {
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger">
+    <p role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
       {error}
     </p>
   );

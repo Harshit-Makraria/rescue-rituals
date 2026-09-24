@@ -7,13 +7,18 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { hostSelect, toEventResponse } from './event.mapper';
+import { promoteFromWaitlist } from '../rsvps/waitlist';
+import { eventInclude, toEventResponse } from './event.mapper';
 import { CreateEventDto, EventPage, EventResponse, ListEventsQuery, UpdateEventDto } from './events.dto';
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(userId: string, dto: CreateEventDto): Promise<EventResponse> {
     const startsAt = new Date(dto.startsAt);
@@ -30,9 +35,10 @@ export class EventsService {
         startsAt,
         endsAt,
         capacity: dto.capacity ?? null,
+        reminderMinutes: dto.reminderMinutes ?? null,
         status: dto.status ?? 'published',
       },
-      include: hostSelect,
+      include: eventInclude,
     });
     return toEventResponse(event, null);
   }
@@ -63,7 +69,7 @@ export class EventsService {
 
     const rows = await this.prisma.event.findMany({
       where,
-      include: hostSelect,
+      include: eventInclude,
       orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
       take: limit + 1,
     });
@@ -78,19 +84,17 @@ export class EventsService {
   }
 
   async findOne(id: string, userId?: string | null): Promise<EventResponse> {
-    const event = await this.prisma.event.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        ...hostSelect,
-        ...(userId && { rsvps: { where: { userId }, select: { status: true } } }),
-      },
-    });
+    const [event, mine] = await Promise.all([
+      this.prisma.event.findFirst({ where: { id, deletedAt: null }, include: eventInclude }),
+      userId
+        ? this.prisma.rsvp.findUnique({ where: { eventId_userId: { eventId: id, userId } }, select: { status: true } })
+        : null,
+    ]);
     // Drafts are invisible to everyone but the host (404, not 403 — don't leak existence).
     if (!event || (event.status === 'draft' && event.creatorId !== userId)) {
       throw new NotFoundException('Event not found.');
     }
-    const myRsvpStatus = userId ? (event.rsvps?.[0]?.status ?? null) : undefined;
-    return toEventResponse(event, myRsvpStatus);
+    return toEventResponse(event, userId ? (mine?.status ?? null) : undefined);
   }
 
   async update(id: string, userId: string, dto: UpdateEventDto): Promise<EventResponse> {
@@ -107,28 +111,63 @@ export class EventsService {
     }
 
     const { version, ...fields } = dto;
-    // Ownership + version are in the WHERE clause, so check and write are one atomic step.
-    const result = await this.prisma.event.updateMany({
-      where: { id, creatorId: userId, deletedAt: null, ...(version !== undefined && { version }) },
-      data: {
-        ...fields,
-        ...(dto.startsAt && { startsAt }),
-        ...(dto.endsAt && { endsAt }),
-        version: { increment: 1 },
-      },
+    const timeChanged =
+      startsAt.getTime() !== current.startsAt.getTime() || endsAt.getTime() !== current.endsAt.getTime();
+    const locationChanged = dto.location !== undefined && dto.location !== current.location;
+    const capacityGrew =
+      dto.capacity !== undefined && (dto.capacity === null || dto.capacity > (current.capacity ?? Infinity));
+
+    await this.prisma.$transaction(async (tx) => {
+      // Ownership + version are in the WHERE clause, so check and write are one atomic step.
+      const result = await tx.event.updateMany({
+        where: { id, creatorId: userId, deletedAt: null, ...(version !== undefined && { version }) },
+        data: {
+          ...fields,
+          ...(dto.startsAt && { startsAt }),
+          ...(dto.endsAt && { endsAt }),
+          // New time or new reminder setting → re-arm the reminder.
+          ...((timeChanged || (dto.reminderMinutes !== undefined && dto.reminderMinutes !== current.reminderMinutes)) && {
+            reminderSentAt: null,
+          }),
+          version: { increment: 1 },
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException('This event was changed by someone else. Reload and try again.');
+      }
+      // More seats → move people off the waitlist straight away.
+      if (capacityGrew) await promoteFromWaitlist(tx, id, this.notifications);
+      if (current.status === 'published' && (timeChanged || locationChanged)) {
+        const what = [timeChanged && 'time', locationChanged && 'location'].filter(Boolean).join(' and ');
+        await this.notifications.notifyAttendees(
+          id,
+          'event_updated',
+          `${dto.title ?? current.title} has a new ${what}`,
+          'The host updated this event. Check the details.',
+          tx,
+        );
+      }
     });
-    if (result.count === 0) {
-      throw new ConflictException('This event was changed by someone else. Reload and try again.');
-    }
     return this.findOne(id, userId);
   }
 
   /** Soft delete: keeps the attendee history (and lets us notify attendees later). */
   async remove(id: string, userId: string): Promise<void> {
-    await this.getOwnedEvent(id, userId);
-    await this.prisma.event.update({
-      where: { id },
-      data: { status: 'cancelled', deletedAt: new Date(), version: { increment: 1 } },
+    const event = await this.getOwnedEvent(id, userId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.event.update({
+        where: { id },
+        data: { status: 'cancelled', deletedAt: new Date(), version: { increment: 1 } },
+      });
+      if (event.status === 'published' && event.startsAt > new Date()) {
+        await this.notifications.notifyAttendees(
+          id,
+          'event_cancelled',
+          `${event.title} was cancelled`,
+          'The host cancelled this event.',
+          tx,
+        );
+      }
     });
   }
 

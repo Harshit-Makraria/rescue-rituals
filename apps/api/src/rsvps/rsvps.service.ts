@@ -2,8 +2,10 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination';
 import { RsvpStatusValue } from '../events/events.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AttendeePage, AttendeesQuery, RsvpResponse } from './rsvps.dto';
+import { promoteFromWaitlist } from './waitlist';
 
 type Tx = Prisma.TransactionClient;
 
@@ -13,7 +15,10 @@ const TX_OPTIONS = { maxWait: 10_000, timeout: 10_000 };
 
 @Injectable()
 export class RsvpsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * Join an event. Idempotent: calling it again returns your current status.
@@ -66,7 +71,7 @@ export class RsvpsService {
       if (row.status === 'going') {
         await tx.$executeRaw`
           UPDATE events SET going_count = going_count - 1 WHERE id = ${eventId}::uuid`;
-        await this.promoteFromWaitlist(tx, eventId);
+        await promoteFromWaitlist(tx, eventId, this.notifications);
       }
       return this.snapshot(tx, eventId, 'cancelled');
     }, TX_OPTIONS);
@@ -121,20 +126,6 @@ export class RsvpsService {
         AND starts_at > now()
         AND (capacity IS NULL OR going_count < capacity)`;
     return updated === 1;
-  }
-
-  private async promoteFromWaitlist(tx: Tx, eventId: string) {
-    // SKIP LOCKED: if two cancellations race, each promotes a different person.
-    const [next] = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM rsvps
-      WHERE event_id = ${eventId}::uuid AND status = 'waitlisted'
-      ORDER BY updated_at, id
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED`;
-    if (next && (await this.claimSeat(tx, eventId))) {
-      await tx.$executeRaw`
-        UPDATE rsvps SET status = 'going', updated_at = now() WHERE id = ${next.id}::uuid`;
-    }
   }
 
   private async snapshot(tx: Tx, eventId: string, status: RsvpStatusValue): Promise<RsvpResponse> {

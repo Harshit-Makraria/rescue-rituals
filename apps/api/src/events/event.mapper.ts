@@ -1,9 +1,21 @@
 import { Event, RsvpStatus } from '@prisma/client';
 import { EventResponse } from './events.dto';
 
-export type EventWithHost = Event & { creator: { id: string; name: string } };
+export type EventWithHost = Event & {
+  creator: { id: string; name: string };
+  rsvps?: { user: { name: string } }[];
+};
 
-export const hostSelect = { creator: { select: { id: true, name: true } } } as const;
+/** Host + the first few attendees (for avatar stacks). Prisma batches the nested read: no N+1. */
+export const eventInclude = {
+  creator: { select: { id: true, name: true } },
+  rsvps: {
+    where: { status: 'going' },
+    orderBy: { updatedAt: 'asc' },
+    take: 4,
+    select: { user: { select: { name: true } } },
+  },
+} as const;
 
 export function toEventResponse(event: EventWithHost, myRsvpStatus?: RsvpStatus | null): EventResponse {
   return {
@@ -18,7 +30,9 @@ export function toEventResponse(event: EventWithHost, myRsvpStatus?: RsvpStatus 
     seatsLeft: event.capacity === null ? null : Math.max(event.capacity - event.goingCount, 0),
     status: event.status,
     version: event.version,
+    reminderMinutes: event.reminderMinutes,
     host: event.creator,
+    attendeePreview: event.rsvps?.map((r) => r.user.name) ?? [],
     createdAt: event.createdAt,
     updatedAt: event.updatedAt,
     ...(myRsvpStatus !== undefined && { myRsvpStatus }),

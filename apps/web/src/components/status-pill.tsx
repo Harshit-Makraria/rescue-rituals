@@ -1,16 +1,23 @@
-import type { RsvpStatus } from '@/lib/api';
+import type { EventItem, RsvpStatus } from '@/lib/api';
+import { Pill } from './ui';
 
-const STYLES: Record<RsvpStatus, string> = {
-  going: 'bg-going-soft text-going',
-  waitlisted: 'bg-wait-soft text-wait',
-  cancelled: 'bg-line text-muted',
+const RSVP: Record<RsvpStatus, { tone: 'going' | 'wait' | 'muted'; label: string }> = {
+  going: { tone: 'going', label: 'Going' },
+  waitlisted: { tone: 'wait', label: 'Waitlisted' },
+  cancelled: { tone: 'muted', label: 'Cancelled' },
 };
-const LABELS: Record<RsvpStatus, string> = { going: 'Going', waitlisted: 'Waitlisted', cancelled: 'Cancelled' };
 
 export function StatusPill({ status }: { status: RsvpStatus }) {
-  return (
-    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${STYLES[status]}`}>
-      {LABELS[status]}
-    </span>
-  );
+  return <Pill tone={RSVP[status].tone}>{RSVP[status].label}</Pill>;
+}
+
+/** The single most useful status for an event row, from the viewer's point of view. */
+export function EventStatus({ event }: { event: EventItem }) {
+  if (event.status === 'draft') return <Pill tone="violet">Draft</Pill>;
+  if (event.status === 'cancelled') return <Pill tone="muted">Cancelled</Pill>;
+  if (event.myRsvpStatus === 'going' || event.myRsvpStatus === 'waitlisted') return <StatusPill status={event.myRsvpStatus} />;
+  if (new Date(event.endsAt) < new Date()) return <Pill tone="muted">Ended</Pill>;
+  if (event.seatsLeft === 0) return <Pill tone="danger">Full</Pill>;
+  if (event.seatsLeft !== null && event.seatsLeft <= 3) return <Pill tone="wait">{event.seatsLeft} left</Pill>;
+  return <Pill tone="accent">Open</Pill>;
 }

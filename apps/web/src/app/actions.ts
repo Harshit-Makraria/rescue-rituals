@@ -48,7 +48,7 @@ export async function logout() {
 }
 
 /**
- * `<input type="datetime-local">` has no timezone. The form sends the browser's
+ * Date and time inputs carry no timezone. The form sends the browser's
  * UTC offset alongside, so we store the exact instant the host meant.
  */
 function toIso(local: string, offsetMinutes: number): string | null {
@@ -61,7 +61,7 @@ export async function saveEvent(_: FormState, form: FormData): Promise<FormState
   const id = str(form, 'id');
   const offset = Number(form.get('tzOffset') ?? 0);
   const values = Object.fromEntries(
-    ['title', 'description', 'location', 'date', 'startTime', 'endTime', 'capacity', 'status'].map((k) => [k, str(form, k)]),
+    ['title', 'description', 'location', 'date', 'startTime', 'endTime', 'capacity', 'status', 'reminderMinutes'].map((k) => [k, str(form, k)]),
   );
   const startsAt = toIso(`${values.date}T${values.startTime}`, offset);
   let endsAt = toIso(`${values.date}T${values.endTime}`, offset);
@@ -76,6 +76,7 @@ export async function saveEvent(_: FormState, form: FormData): Promise<FormState
     startsAt,
     endsAt,
     capacity: values.capacity ? Number(values.capacity) : null,
+    reminderMinutes: values.reminderMinutes ? Number(values.reminderMinutes) : null,
     status: (values.status === 'draft' ? 'draft' : 'published') as 'draft' | 'published',
   };
 
@@ -111,8 +112,20 @@ export async function setRsvp(eventId: string, going: boolean): Promise<RsvpActi
   return { ok: true, result: data };
 }
 
-export async function loadMoreEvents(cursor: string, q?: string) {
+export async function loadMoreEvents(cursor: string, q?: string, to?: string) {
   const client = await api();
-  const { data } = await client.GET('/api/v1/events', { params: { query: { cursor, q: q || undefined } } });
+  const { data } = await client.GET('/api/v1/events', { params: { query: { cursor, q: q || undefined, to } } });
   return data ?? { items: [], nextCursor: null };
+}
+
+export async function markAllNotificationsRead() {
+  const client = await api();
+  await client.POST('/api/v1/users/me/notifications/read-all');
+  refresh();
+}
+
+export async function markNotificationRead(id: string) {
+  const client = await api();
+  await client.POST('/api/v1/users/me/notifications/{id}/read', { params: { path: { id } } });
+  refresh();
 }

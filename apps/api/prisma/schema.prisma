@@ -28,6 +28,15 @@ enum RsvpStatus {
   @@map("rsvp_status")
 }
 
+enum NotificationType {
+  event_reminder
+  waitlist_promoted
+  event_updated
+  event_cancelled
+
+  @@map("notification_type")
+}
+
 model User {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email            String   @unique
@@ -38,33 +47,39 @@ model User {
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  events Event[]
-  rsvps  Rsvp[]
+  events        Event[]
+  rsvps         Rsvp[]
+  notifications Notification[]
 
   @@map("users")
 }
 
 model Event {
-  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  creatorId   String      @map("creator_id") @db.Uuid
-  title       String
-  description String?
-  location    String?
-  startsAt    DateTime    @map("starts_at") @db.Timestamptz(3)
-  endsAt      DateTime    @map("ends_at") @db.Timestamptz(3)
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  creatorId       String      @map("creator_id") @db.Uuid
+  title           String
+  description     String?
+  location        String?
+  startsAt        DateTime    @map("starts_at") @db.Timestamptz(3)
+  endsAt          DateTime    @map("ends_at") @db.Timestamptz(3)
   /// null = unlimited
-  capacity    Int?
+  capacity        Int?
   /// Denormalised count of `going` RSVPs, maintained in the RSVP transaction
-  goingCount  Int         @default(0) @map("going_count")
-  status      EventStatus @default(published)
+  goingCount      Int         @default(0) @map("going_count")
+  status          EventStatus @default(published)
   /// Optimistic-lock version, bumped on every edit
-  version     Int         @default(1)
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt   DateTime?   @map("deleted_at") @db.Timestamptz(3)
+  version         Int         @default(1)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?   @map("deleted_at") @db.Timestamptz(3)
+  /// Remind attendees this many minutes before start; null = no reminder
+  reminderMinutes Int?        @map("reminder_minutes")
+  /// Set when the reminder job has claimed this event (reset if the time changes)
+  reminderSentAt  DateTime?   @map("reminder_sent_at") @db.Timestamptz(3)
 
-  creator User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-  rsvps   Rsvp[]
+  creator       User           @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  rsvps         Rsvp[]
+  notifications Notification[]
 
   @@index([creatorId])
   @@map("events")
@@ -86,4 +101,21 @@ model Rsvp {
   @@index([eventId, status, updatedAt])
   @@index([userId, status])
   @@map("rsvps")
+}
+
+model Notification {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  eventId   String?          @map("event_id") @db.Uuid
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
 }

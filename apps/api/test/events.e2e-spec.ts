@@ -5,6 +5,7 @@ import { execSync } from 'child_process';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { RemindersService } from '../src/notifications/reminders.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const HOUR = 60 * 60 * 1000;
@@ -36,7 +37,7 @@ describe('Events API (e2e)', () => {
     configureApp(app as NestExpressApplication);
     await app.listen(0); // one real server: avoids supertest re-listening per request
     prisma = app.get(PrismaService);
-    await prisma.$executeRawUnsafe('TRUNCATE rsvps, events, users CASCADE');
+    await prisma.$executeRawUnsafe('TRUNCATE notifications, rsvps, events, users CASCADE');
   });
 
   afterAll(async () => {
@@ -189,6 +190,68 @@ describe('Events API (e2e)', () => {
       const server = app.getHttpServer();
       for (const g of [a, b]) await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${g.accessToken}`).expect(200);
       await request(server).patch(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${host.accessToken}`).send({ capacity: 1 }).expect(409);
+    });
+  });
+  describe('reminders & notifications', () => {
+    const inbox = (t: string) =>
+      request(app.getHttpServer()).get('/api/v1/users/me/notifications').set('Authorization', `Bearer ${t}`).expect(200);
+
+    it('sends each due reminder exactly once, even when two job runs overlap', async () => {
+      const host = await register();
+      const [a, b] = [await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, {
+        title: 'Reminder test', startsAt: future(0.5), endsAt: future(1.5), reminderMinutes: 60,
+      }).expect(201);
+      expect(event.reminderMinutes).toBe(60);
+      const server = app.getHttpServer();
+      for (const g of [a, b]) await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${g.accessToken}`).expect(200);
+
+      const reminders = app.get(RemindersService);
+      const runs = await Promise.all([reminders.sendDueReminders(), reminders.sendDueReminders()]);
+      expect(runs.reduce((n, r) => n + r.events, 0)).toBe(1); // claimed by exactly one run
+      await reminders.sendDueReminders(); // later runs find nothing new
+
+      const { body } = await inbox(a.accessToken);
+      const mine = body.items.filter((n: { type: string; eventId: string }) => n.type === 'event_reminder' && n.eventId === event.id);
+      expect(mine).toHaveLength(1);
+      expect(mine[0].title).toMatch(/Reminder: Reminder test starts in/);
+      expect(body.unreadCount).toBeGreaterThanOrEqual(1);
+
+      await request(server).post('/api/v1/users/me/notifications/read-all').set('Authorization', `Bearer ${a.accessToken}`).expect(204);
+      expect((await inbox(a.accessToken)).body.unreadCount).toBe(0);
+    });
+
+    it('does not remind events outside their reminder window', async () => {
+      const host = await register();
+      const { body: event } = await createEvent(host.accessToken, { startsAt: future(48), endsAt: future(49), reminderMinutes: 60 }).expect(201);
+      await app.get(RemindersService).sendDueReminders();
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: event.id } });
+      expect(row.reminderSentAt).toBeNull();
+    });
+
+    it('raising capacity promotes the waitlist and notifies the promoted guests', async () => {
+      const host = await register();
+      const [a, b, c] = [await register(), await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, { capacity: 1 }).expect(201);
+      const server = app.getHttpServer();
+      for (const g of [a, b, c]) await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${g.accessToken}`).expect(200);
+
+      const edited = await request(server).patch(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${host.accessToken}`).send({ capacity: 3 }).expect(200);
+      expect(edited.body).toMatchObject({ goingCount: 3, seatsLeft: 0 });
+      const { body } = await inbox(c.accessToken);
+      expect(body.items.some((n: { type: string }) => n.type === 'waitlist_promoted')).toBe(true);
+    });
+
+    it('notifies attendees when the time changes or the event is cancelled', async () => {
+      const host = await register();
+      const guest = await register();
+      const { body: event } = await createEvent(host.accessToken).expect(201);
+      const server = app.getHttpServer();
+      await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${guest.accessToken}`).expect(200);
+      await request(server).patch(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${host.accessToken}`).send({ startsAt: future(30), endsAt: future(32) }).expect(200);
+      await request(server).delete(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${host.accessToken}`).expect(204);
+      const types = (await inbox(guest.accessToken)).body.items.map((n: { type: string }) => n.type);
+      expect(types).toEqual(expect.arrayContaining(['event_updated', 'event_cancelled']));
     });
   });
 });

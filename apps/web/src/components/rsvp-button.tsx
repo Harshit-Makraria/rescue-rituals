@@ -25,13 +25,13 @@ export function RsvpButton({ eventId, status, full, signedIn, closed }: Props) {
   const [pending, startTransition] = useTransition();
 
   if (closed) {
-    return <p className="rounded-lg bg-raised px-4 py-3 text-sm text-muted">RSVPs are closed for this event.</p>;
+    return <p className="rounded-xl bg-raised px-4 py-3 text-sm text-muted">RSVPs are closed for this event.</p>;
   }
   if (!signedIn) {
     return (
       <Link
         href={`/login?next=/events/${eventId}`}
-        className="block rounded-lg bg-accent px-4 py-3 text-center font-semibold text-accent-ink hover:opacity-90"
+        className="block rounded-xl bg-accent px-4 py-3 text-center font-semibold text-accent-ink hover:opacity-90"
       >
         Log in to RSVP
       </Link>
@@ -81,18 +81,18 @@ export function RsvpButton({ eventId, status, full, signedIn, closed }: Props) {
   return (
     <div className="space-y-3">
       {optimistic === 'going' && (
-        <p className="rounded-lg bg-going-soft px-4 py-3 font-semibold text-going">✓ You’re going</p>
+        <p className="rounded-xl bg-going-soft px-4 py-3 font-semibold text-going">✓ You’re going</p>
       )}
       {optimistic === 'waitlisted' && (
-        <p className="rounded-lg bg-wait-soft px-4 py-3 font-semibold text-wait">You’re on the waitlist</p>
+        <p className="rounded-xl bg-wait-soft px-4 py-3 font-semibold text-wait">You’re on the waitlist</p>
       )}
       <button
         onClick={toggle}
         disabled={pending}
         className={
           active
-            ? 'w-full rounded-lg border border-line bg-surface px-4 py-3 font-semibold text-muted hover:text-danger disabled:opacity-60'
-            : 'w-full rounded-lg bg-accent px-4 py-3 font-semibold text-accent-ink hover:opacity-90 disabled:opacity-60'
+            ? 'w-full rounded-xl border border-line bg-surface px-4 py-3 font-semibold text-muted hover:text-danger disabled:opacity-60'
+            : 'w-full rounded-xl bg-accent px-4 py-3 font-semibold text-accent-ink hover:opacity-90 disabled:opacity-60'
         }
       >
         {label}

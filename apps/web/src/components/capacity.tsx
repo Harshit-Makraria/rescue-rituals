@@ -1,23 +1,29 @@
-/** Seats meter: turns amber when nearly full, shows "Full · waitlist open" at capacity. */
+/** Seats meter: bar + label. Turns amber when nearly full, red at capacity. */
 export function Capacity({ going, capacity }: { going: number; capacity: number | null }) {
   if (capacity === null) {
-    return <p className="text-sm text-muted">{going} going · open to all</p>;
+    return (
+      <div className="flex justify-between text-sm">
+        <span className="font-semibold">{going} going</span>
+        <span className="text-muted">Unlimited seats</span>
+      </div>
+    );
   }
   const left = Math.max(capacity - going, 0);
   const pct = Math.min(100, Math.round((going / capacity) * 100));
-  const tone = left === 0 ? 'bg-danger' : left <= Math.max(2, capacity * 0.2) ? 'bg-wait' : 'bg-going';
-  const label = left === 0 ? 'Full · waitlist open' : `${left} of ${capacity} seats left`;
+  const tone = left === 0 ? 'bg-danger' : pct >= 80 ? 'bg-wait' : 'bg-accent';
 
   return (
     <div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted">{going} going</span>
-        <span className={left === 0 ? 'font-semibold text-danger' : left <= 2 ? 'font-semibold text-wait' : 'text-muted'}>
-          {label}
+        <span className="font-semibold">
+          {going} <span className="font-normal text-muted">/ {capacity} going</span>
+        </span>
+        <span className={left === 0 ? 'font-semibold text-danger' : left <= 3 ? 'font-semibold text-wait' : 'text-muted'}>
+          {left === 0 ? 'Full · waitlist open' : `${left} seat${left === 1 ? '' : 's'} left`}
         </span>
       </div>
       <div
-        className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line"
+        className="mt-2 h-2 overflow-hidden rounded-full bg-raised"
         role="meter"
         aria-valuemin={0}
         aria-valuemax={capacity}

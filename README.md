@@ -27,15 +27,16 @@ The RSVP path never overbooks, even when many people join at the same moment.
 4. [Architecture](#4-architecture)
 5. [Data model](#5-data-model)
 6. [RSVPs under a spike: the core design](#6-rsvps-under-a-spike-the-core-design)
-7. [API reference](#7-api-reference)
-8. [Authentication & security](#8-authentication--security)
-9. [Frontend](#9-frontend)
-10. [Decisions & assumptions](#10-decisions--assumptions)
-11. [Testing](#11-testing)
-12. [Run locally](#12-run-locally)
-13. [Deployment & environment variables](#13-deployment--environment-variables)
-14. [Project structure](#14-project-structure)
-15. [What I'd build next](#15-what-id-build-next)
+7. [Reminders & notifications](#7-reminders--notifications)
+8. [API reference](#8-api-reference)
+9. [Authentication & security](#9-authentication--security)
+10. [Frontend](#10-frontend)
+11. [Decisions & assumptions](#11-decisions--assumptions)
+12. [Testing](#12-testing)
+13. [Run locally](#13-run-locally)
+14. [Deployment & environment variables](#14-deployment--environment-variables)
+15. [Project structure](#15-project-structure)
+16. [What I'd build next](#16-what-id-build-next)
 
 ---
 
@@ -82,7 +83,9 @@ curl -s -X POST "$API/events/<eventId>/rsvp" -H "Authorization: Bearer $TOKEN"
 
 **Beyond scope**
 - ⭐ **Full-stack Next.js app** consuming the API
-- ⭐ **Waitlist with automatic promotion** when someone cancels
+- ⭐ **Waitlist with automatic promotion** when someone cancels, or when the host raises the capacity
+- ⭐ **Event reminders:** the host picks "1 hour before" (or 15 min to 7 days), and a scheduled job notifies everyone going. It's safe to run on several instances at once
+- ⭐ **In-app notifications:** reminders, "you're off the waitlist", time or location changes, cancellations
 - ⭐ **Concurrency-safe RSVPs:** proven by a test (50 simultaneous RSVPs for 10 seats → exactly 10 in) and verified on the live deployment
 - ⭐ **Idempotent RSVP:** double-taps and retries never double-book
 - ⭐ **Optimistic locking** on event edits (409 instead of silently overwriting someone else's change)
@@ -100,6 +103,7 @@ curl -s -X POST "$API/events/<eventId>/rsvp" -H "Authorization: Bearer $TOKEN"
 | Database | **PostgreSQL 16** on **Neon** | Constraints, row locks, partial indexes; managed and separate from the API |
 | ORM | **Prisma 6**, plus raw SQL on the RSVP path | Type-safe and fast to build with; raw SQL where atomicity matters |
 | Auth | `@nestjs/jwt`, Passport, **argon2id** | Stateless access tokens, current password-hashing recommendation |
+| Jobs | `@nestjs/schedule` cron + Postgres `SKIP LOCKED` | Reminders without a separate queue, safe to run on several instances |
 | Validation | `class-validator` DTOs, global `ValidationPipe` | Whitelisting blocks mass assignment |
 | Docs | `@nestjs/swagger` (generated from the DTOs) | Docs can't drift from the code |
 | Web | **Next.js 16** (App Router), React 19, Tailwind CSS v4 | Server Components, Server Actions, `useOptimistic` |
@@ -131,6 +135,8 @@ erDiagram
   USERS ||--o{ EVENTS : hosts
   USERS ||--o{ RSVPS : makes
   EVENTS ||--o{ RSVPS : has
+  USERS ||--o{ NOTIFICATIONS : receives
+  EVENTS ||--o{ NOTIFICATIONS : about
   USERS {
     uuid id PK
     text email UK
@@ -152,6 +158,8 @@ erDiagram
     event_status status "draft | published | cancelled"
     int version "optimistic lock"
     timestamptz deleted_at "soft delete"
+    int reminder_minutes "NULL = no reminder"
+    timestamptz reminder_sent_at "claimed by the job"
   }
   RSVPS {
     uuid id PK
@@ -160,6 +168,14 @@ erDiagram
     rsvp_status status "going | waitlisted | cancelled"
     timestamptz created_at
     timestamptz updated_at "waitlist order"
+  }
+  NOTIFICATIONS {
+    uuid id PK
+    uuid user_id FK
+    uuid event_id FK
+    notification_type type "reminder | promoted | updated | cancelled"
+    text title
+    timestamptz read_at
   }
 ```
 
@@ -173,6 +189,9 @@ erDiagram
 | Partial index `(starts_at, id) WHERE status='published' AND deleted_at IS NULL` | The busiest query (upcoming events) is a small index range scan, and it matches the keyset pagination order |
 | `(event_id, status, updated_at)` on `rsvps` | Attendee lists and oldest-first waitlist promotion |
 | `(user_id, status)` on `rsvps` | "My RSVPs" |
+| Partial index on `events (starts_at)` for events that still owe a reminder | The reminder job scans only rows it might send |
+| Partial unique `(user_id, event_id, type) WHERE type = 'event_reminder'` | At most one reminder per person per event |
+| `(user_id, created_at DESC)` on `notifications` | The notification inbox |
 
 **Why a denormalised `going_count`?** Event lists are read far more often than RSVPs are written. A counter that's updated in the same transaction as the RSVP row is O(1) to read, instead of a `COUNT(*)` for every card on every page load. The CHECK constraint keeps the counter honest.
 
@@ -208,7 +227,40 @@ The seat check and the increment are **one atomic statement**. Postgres row-lock
 
 ---
 
-## 7. API reference
+## 7. Reminders & notifications
+
+Hosts choose a reminder when creating an event (`reminderMinutes`: 15 min, 1 hour, 3 hours, 1 day…). A cron job runs **every minute** and sends every reminder that's due:
+
+```sql
+-- one transaction per run
+UPDATE events SET reminder_sent_at = now()
+WHERE id IN (
+  SELECT id FROM events
+  WHERE reminder_minutes IS NOT NULL AND reminder_sent_at IS NULL
+    AND status = 'published' AND deleted_at IS NULL
+    AND starts_at > now() AND starts_at <= now() + make_interval(mins => reminder_minutes)
+  ORDER BY starts_at LIMIT 50
+  FOR UPDATE SKIP LOCKED                     -- concurrent runs never claim the same event
+)
+RETURNING id, title, starts_at, location;
+
+INSERT INTO notifications (user_id, event_id, type, title, body)
+SELECT user_id, event_id, 'event_reminder', … FROM rsvps WHERE event_id = $1 AND status = 'going'
+ON CONFLICT (user_id, event_id, type) WHERE type = 'event_reminder' DO NOTHING;   -- idempotent
+```
+
+- **Safe with any number of API instances:** `FOR UPDATE SKIP LOCKED` claims each due event exactly once, and a partial unique index guarantees at most one reminder per person per event, even if two runs overlap. There's a test for this.
+- **Atomic:** the claim and the inserts share one transaction. If the inserts fail, the claim rolls back and the next run retries.
+- **Re-armed on change:** if the host moves the start time or changes the reminder setting, `reminder_sent_at` is reset.
+- **Indexed:** a partial index covers only events that still owe a reminder, so each run scans almost nothing.
+- **Email is optional:** set `RESEND_API_KEY` and `EMAIL_FROM` to also send emails. They're sent after the transaction commits, so slow email never holds database locks. Without them, in-app notifications still work.
+- **Other notifications** are written **in the same transaction** as the change that causes them: waitlist promotion (after a cancellation or a capacity increase), time or location changes, and cancellations.
+
+> **Hosting note:** Render's free tier sleeps when idle, and a sleeping instance runs no cron. The keep-warm ping keeps it awake. In production this job would run on an always-on worker, or be triggered by a scheduler such as EventBridge.
+
+---
+
+## 8. API reference
 
 Base URL: `https://events-api-43jh.onrender.com/api/v1` · interactive docs: **[/docs](https://events-api-43jh.onrender.com/docs)**
 
@@ -229,6 +281,8 @@ Base URL: `https://events-api-43jh.onrender.com/api/v1` · interactive docs: **[
 | GET | `/users/me` | JWT | Profile with hosting and going counts |
 | GET | `/users/me/events` | JWT | Events you host (drafts and past included) |
 | GET | `/users/me/rsvps` | JWT | Events you're going to or waitlisted for |
+| GET | `/users/me/notifications` | JWT | Latest notifications and the unread count (`?unread=true`) |
+| POST | `/users/me/notifications/read-all` · `/users/me/notifications/:id/read` | JWT | Mark as read |
 | GET | `/health` | – | Liveness plus a database check |
 
 **Example: RSVP to a full event**
@@ -250,7 +304,7 @@ Authorization: Bearer <token>
 
 ---
 
-## 8. Authentication & security
+## 9. Authentication & security
 
 - **Passwords** are hashed with **argon2id**. Login errors are generic, so they don't reveal which emails have accounts.
 - **Access token** (15 min) plus **refresh token** (7 days). Refresh tokens are **rotated** on every use, and only their SHA-256 hash is stored. Reusing an old refresh token (a sign of theft) revokes the session.
@@ -264,7 +318,7 @@ Authorization: Bearer <token>
 
 ---
 
-## 9. Frontend
+## 10. Frontend
 
 Next.js 16 (App Router), deployed on Vercel.
 
@@ -274,7 +328,8 @@ Next.js 16 (App Router), deployed on Vercel.
 | `/events/[id]` | Details, host, attendee list, RSVP / waitlist / cancel, host tools |
 | `/events/new` · `/events/[id]/edit` | Create and edit forms: title, description, date, start and end time, location, capacity, visibility. The host picks local times; the API stores UTC. An end time before the start time means the event ends the next day |
 | `/docs` | This documentation, with rendered diagrams and an API reference generated from the OpenAPI spec |
-| `/me` | Tabs: *Going & waitlisted* / *Hosting* |
+| `/me` | Filter list: Going · Waitlisted · Hosting · Past, with counts |
+| `/notifications` | Reminders and event updates, with unread state and mark all as read |
 | `/login` · `/register` | Auth, with a redirect back to where the user started |
 
 - **Optimistic RSVP** (`useOptimistic`): the button updates instantly, then reconciles with the server. If the last seat went to someone else a moment earlier, it shows "waitlisted" and explains why.
@@ -284,7 +339,7 @@ Next.js 16 (App Router), deployed on Vercel.
 
 ---
 
-## 10. Decisions & assumptions
+## 11. Decisions & assumptions
 
 The brief was deliberately open, so these are the calls I made:
 
@@ -296,11 +351,12 @@ The brief was deliberately open, so these are the calls I made:
 - **Keyset pagination** instead of OFFSET: stable while events are being inserted, and fast on deep pages.
 - **Stateless access tokens** (no database hit per request), with short lifetimes and server-side refresh rotation.
 - **Prisma for productivity, raw SQL on the hot path**, where atomicity matters more than ORM convenience.
+- **No multi-tenancy (on purpose).** This is a consumer platform: every user shares one space, so tenant IDs would add a filter to every query and protect nothing. If organisations were added later (company-only events, for example), the plan is an `organization_id` column on `events` and `memberships`, a tenant-scoped repository layer, and Postgres **row-level security** (`USING (organization_id = current_setting('app.org_id')::uuid)`) as defence in depth.
 - **The database is separate from the API** (Neon): the API stays stateless and can be scaled or moved independently.
 
 ---
 
-## 11. Testing
+## 12. Testing
 
 The e2e suite runs against a **real Postgres**, because constraints and race conditions are exactly what mocks would hide.
 
@@ -318,11 +374,13 @@ cd apps/api && npm run test:e2e
 | RSVP | Idempotent; `myRsvpStatus`; attendee count |
 | **Concurrency** | **50 simultaneous RSVPs for 10 seats → exactly 10 going, 40 waitlisted** |
 | Waitlist | Cancelling promotes the oldest waitlisted person |
-| Capacity | Can't be lowered below the number already going |
+| Capacity | Can't be lowered below the number already going; raising it promotes the waitlist and notifies those promoted |
+| **Reminders** | **Two job runs at once → each reminder sent exactly once**; events outside their window are skipped |
+| Notifications | Time changes and cancellations notify attendees; mark all as read |
 
 ---
 
-## 12. Run locally
+## 13. Run locally
 
 Requires **Node 22+** (24 recommended) and **Docker**.
 
@@ -348,7 +406,7 @@ After changing API DTOs, regenerate the web types: `cd apps/api && npm run opena
 
 ---
 
-## 13. Deployment & environment variables
+## 14. Deployment & environment variables
 
 ```mermaid
 flowchart LR
@@ -370,12 +428,13 @@ Each deploy runs `prisma migrate deploy`, then the idempotent seed, then starts 
 | Render | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Generated by the Blueprint |
 | Render | `CORS_ORIGINS` | `https://rescue-rituals.vercel.app` |
 | Render | `NODE_VERSION` | `24` |
+| Render (optional) | `RESEND_API_KEY`, `EMAIL_FROM` | Also send reminders by email (Resend) |
 | Vercel | `API_URL` | `https://events-api-43jh.onrender.com` (no trailing slash) |
 | GitHub (optional) | repo variable `API_URL` | Enables the [keep-warm ping](.github/workflows/keep-warm.yml) so the free API doesn't sleep |
 
 ---
 
-## 14. Project structure
+## 15. Project structure
 
 ```
 apps/
@@ -386,6 +445,7 @@ apps/
       events/                CRUD, host-only edits, optimistic locking, keyset pagination
       rsvps/                 concurrency-safe RSVP, waitlist, attendees
       users/                 /users/me, my events, my RSVPs
+      notifications/         reminder cron (SKIP LOCKED), in-app notifications, optional email
       common/                error filter, per-user throttler, pagination, decorators
       health/                database health check
       seed.ts                idempotent demo data (runs on every deploy)
@@ -402,11 +462,12 @@ docker-compose.yml           local Postgres
 
 ---
 
-## 15. What I'd build next
+## 16. What I'd build next
 
-- **Notifications:** RSVP confirmations, "you're off the waitlist", and 1-hour reminders, using a queue and workers (BullMQ or SQS) with idempotent sends.
+- **Real-time and push:** deliver the notifications we already store over WebSockets or SSE, plus mobile push (FCM/APNs) through a queue (BullMQ or SQS).
 - **Roles and co-hosts:** an `event_hosts` join table and a policy layer on top of the ownership check.
 - **Event images:** S3 presigned uploads, served through a CDN.
 - **Location search:** PostGIS `geography` column, a GIST index, `ST_DWithin` queries.
 - **Observability:** OpenTelemetry traces, structured logs with request IDs, RED metrics and alerts.
+- **Multi-tenancy** for organisations, if the product needs it (see [Decisions](#11-decisions--assumptions)).
 - **Hot-event mode:** the Redis admission gate and queue described in [section 6](#6-rsvps-under-a-spike-the-core-design), switched on per event.

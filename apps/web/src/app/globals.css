@@ -1,69 +1,79 @@
 @import "tailwindcss";
 
 /*
- * Palette: warm paper + cobalt ink, with ticket-stub green/amber for RSVP state.
+ * Palette: soft grey canvas, white cards, bright blue accent; green/amber/red for
+ * RSVP state. Dark theme is charcoal (not pure black) with a lifted blue.
  * Theme has three states: no data-theme = follow the OS; data-theme="light" |
  * "dark" = the viewer's explicit choice (set by the toggle, stored in a cookie).
  */
 :root {
-  --bg: #f4f3ef;
+  --bg: #f3f5f9;
   --surface: #ffffff;
-  --raised: #fbfaf7;
-  --ink: #161a23;
-  --muted: #5f6573;
-  --line: #e0ddd5;
-  --accent: #2448d8;
+  --raised: #f7f8fb;
+  --ink: #111827;
+  --muted: #6b7280;
+  --line: #e5e8ef;
+  --accent: #1f6bff;
   --accent-ink: #ffffff;
-  --accent-soft: #e6ebfc;
-  --going: #16794a;
-  --going-soft: #e0f3e8;
-  --wait: #a4620a;
-  --wait-soft: #fbefd8;
-  --danger: #b9352a;
-  --danger-soft: #f9e3e0;
-  --code-bg: #efede7;
+  --accent-soft: #e8f0ff;
+  --going: #13a05b;
+  --going-soft: #e3f6ec;
+  --wait: #d97706;
+  --wait-soft: #fdf2e0;
+  --danger: #e5484d;
+  --danger-soft: #fdeaea;
+  --violet: #7c5cff;
+  --violet-soft: #efebff;
+  --code-bg: #f1f3f8;
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 16px rgb(16 24 40 / 0.04);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1117;
-    --surface: #171a22;
-    --raised: #1c2029;
-    --ink: #eceef3;
-    --muted: #9aa1b0;
-    --line: #2a2f3b;
-    --accent: #7d97ff;
-    --accent-ink: #0f1117;
-    --accent-soft: #1f2748;
-    --going: #4fcf8c;
-    --going-soft: #13301f;
-    --wait: #f0b25a;
-    --wait-soft: #3a2a10;
-    --danger: #f08378;
-    --danger-soft: #3a1c19;
-    --code-bg: #1f2430;
+    --bg: #111214;
+    --surface: #1a1b1f;
+    --raised: #222328;
+    --ink: #eceef2;
+    --muted: #9a9ca5;
+    --line: #2c2e35;
+    --accent: #3b82ff;
+    --accent-ink: #ffffff;
+    --accent-soft: #1a2946;
+    --going: #3ecf8e;
+    --going-soft: #12301f;
+    --wait: #f5a524;
+    --wait-soft: #37280e;
+    --danger: #ff6b6b;
+    --danger-soft: #3a1b1c;
+    --violet: #a08bff;
+    --violet-soft: #2a2447;
+    --code-bg: #222328;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f1117;
-  --surface: #171a22;
-  --raised: #1c2029;
-  --ink: #eceef3;
-  --muted: #9aa1b0;
-  --line: #2a2f3b;
-  --accent: #7d97ff;
-  --accent-ink: #0f1117;
-  --accent-soft: #1f2748;
-  --going: #4fcf8c;
-  --going-soft: #13301f;
-  --wait: #f0b25a;
-  --wait-soft: #3a2a10;
-  --danger: #f08378;
-  --danger-soft: #3a1c19;
-  --code-bg: #1f2430;
+  --bg: #111214;
+  --surface: #1a1b1f;
+  --raised: #222328;
+  --ink: #eceef2;
+  --muted: #9a9ca5;
+  --line: #2c2e35;
+  --accent: #3b82ff;
+  --accent-ink: #ffffff;
+  --accent-soft: #1a2946;
+  --going: #3ecf8e;
+  --going-soft: #12301f;
+  --wait: #f5a524;
+  --wait-soft: #37280e;
+  --danger: #ff6b6b;
+  --danger-soft: #3a1b1c;
+  --violet: #a08bff;
+  --violet-soft: #2a2447;
+  --code-bg: #222328;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   color-scheme: dark;
 }
 
@@ -84,8 +94,11 @@
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-code: var(--code-bg);
-  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --shadow-card: var(--shadow);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
 }
 

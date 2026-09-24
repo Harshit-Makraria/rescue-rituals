@@ -53,6 +53,14 @@ export class CreateEventDto {
   @Max(100_000)
   capacity?: number | null;
 
+  /** Remind attendees this many minutes before the start (5 min – 7 days). Omit or null for no reminder. @example 60 */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(10_080)
+  reminderMinutes?: number | null;
+
   /** `draft` events are visible only to their host. */
   @IsOptional()
   @ApiProperty({ enum: ['draft', 'published'], default: 'published', required: false })
@@ -124,7 +132,11 @@ export class EventResponse {
   @ApiProperty({ enum: EVENT_STATUSES })
   status: EventStatusValue;
   version: number;
+  /** Minutes before start that attendees get a reminder; null = none */
+  reminderMinutes: number | null;
   host: HostResponse;
+  /** Names of the first few people going (for avatar stacks) */
+  attendeePreview: string[];
   createdAt: Date;
   updatedAt: Date;
   /** The caller's RSVP status — present only when a valid token is sent. */

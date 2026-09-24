@@ -9,7 +9,7 @@ import {
 } from './lib/session';
 
 const API_URL = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '');
-const PROTECTED = /^\/(me|events\/new|events\/[^/]+\/edit)(\/|$)/;
+const PROTECTED = /^\/(me|notifications|events\/new|events\/[^/]+\/edit)(\/|$)/;
 
 /**
  * Runs before every page render and server action:

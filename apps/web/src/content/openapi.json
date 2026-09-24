@@ -1,6 +1,92 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/api/v1/users/me/notifications": {
+      "get": {
+        "operationId": "NotificationsController_list",
+        "parameters": [
+          {
+            "name": "unread",
+            "required": false,
+            "in": "query",
+            "description": "Only unread notifications",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/users/me/notifications/read-all": {
+      "post": {
+        "operationId": "NotificationsController_markAllRead",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/users/me/notifications/{id}/read": {
+      "post": {
+        "operationId": "NotificationsController_markRead",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "HealthController_health",
@@ -630,6 +716,70 @@
       }
     },
     "schemas": {
+      "NotificationResponse": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "event_reminder",
+              "waitlist_promoted",
+              "event_updated",
+              "event_cancelled"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Event this notification is about, if any"
+          },
+          "readAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "title",
+          "body",
+          "eventId",
+          "readAt",
+          "createdAt"
+        ]
+      },
+      "NotificationPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationResponse"
+            }
+          },
+          "unreadCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "unreadCount"
+        ]
+      },
       "RegisterDto": {
         "type": "object",
         "properties": {
@@ -839,8 +989,20 @@
           "version": {
             "type": "number"
           },
+          "reminderMinutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Minutes before start that attendees get a reminder; null = none"
+          },
           "host": {
             "$ref": "#/components/schemas/HostResponse"
+          },
+          "attendeePreview": {
+            "description": "Names of the first few people going (for avatar stacks)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "createdAt": {
             "format": "date-time",
@@ -863,7 +1025,9 @@
           "goingCount",
           "seatsLeft",
           "version",
+          "reminderMinutes",
           "host",
+          "attendeePreview",
           "createdAt",
           "updatedAt"
         ]
@@ -947,6 +1111,14 @@
             "example": 50,
             "minimum": 1,
             "maximum": 100000
+          },
+          "reminderMinutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Remind attendees this many minutes before the start (5 min – 7 days). Omit or null for no reminder.",
+            "example": 60,
+            "minimum": 5,
+            "maximum": 10080
           }
         },
         "required": [
@@ -1000,6 +1172,14 @@
             "example": 50,
             "minimum": 1,
             "maximum": 100000
+          },
+          "reminderMinutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Remind attendees this many minutes before the start (5 min – 7 days). Omit or null for no reminder.",
+            "example": 60,
+            "minimum": 5,
+            "maximum": 10080
           },
           "version": {
             "type": "number",
