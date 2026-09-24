@@ -11,6 +11,7 @@ The RSVP path never overbooks, even when many people join at the same moment.
 | 📖 **Docs (in the app)** | **https://rescue-rituals.vercel.app/docs**: this README plus a generated API reference |
 | 📘 **Swagger docs** | **https://events-api-43jh.onrender.com/docs** |
 | 🧾 **OpenAPI JSON** | https://events-api-43jh.onrender.com/docs-json |
+| 📄 **Data model & API reference** | [PDF](docs/Data-Model-and-API-Reference.pdf) · [Word](docs/Data-Model-and-API-Reference.docx) |
 | 📮 **Postman collection** | [`docs/events-api.postman_collection.json`](docs/events-api.postman_collection.json) (live URL preset) |
 | 🎥 **Loom walkthrough** | `<add link>` |
 
@@ -382,6 +383,13 @@ The e2e suite runs against a **real Postgres**, because constraints and race con
 
 ```bash
 cd apps/api && npm run test:e2e
+```
+
+**Live proof against the deployed API** (15 people, 5 seats, all at the same moment):
+
+```bash
+cd apps/api && node scripts/live-concurrency-check.mjs
+# going: 5 · waitlisted: 10 · event count: 5 / 5 · ✅ No overbooking.
 ```
 
 | Test | What it proves |
