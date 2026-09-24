@@ -393,4 +393,16 @@ describe('Events API (e2e)', () => {
       expect(pub.body.items[0].plusOnes).toBe(1);
     });
   });
+  it('notifies the host when someone RSVPs, but not for their own RSVP', async () => {
+    const host = await register();
+    const guest = await register();
+    const { body: event } = await createEvent(host.accessToken, { title: 'Host ping', capacity: 1 }).expect(201);
+    const server = app.getHttpServer();
+    await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${guest.accessToken}`).send({ plusOnes: 0 }).expect(200);
+    await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${host.accessToken}`).expect(200); // host joins own event
+    const { body } = await request(server).get('/api/v1/users/me/notifications').set('Authorization', `Bearer ${host.accessToken}`).expect(200);
+    const mine = body.items.filter((n: { type: string; eventId: string }) => n.type === 'new_attendee' && n.eventId === event.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].title).toMatch(/is going to Host ping/);
+  });
 });

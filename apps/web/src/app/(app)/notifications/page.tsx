@@ -10,6 +10,7 @@ export const metadata: Metadata = { title: 'Notifications' };
 
 const TYPE = {
   event_reminder: { icon: 'bell', tone: 'bg-accent-soft text-accent' },
+  new_attendee: { icon: 'users', tone: 'bg-violet-soft text-violet' },
   waitlist_promoted: { icon: 'check', tone: 'bg-going-soft text-going' },
   event_updated: { icon: 'edit', tone: 'bg-wait-soft text-wait' },
   event_cancelled: { icon: 'x', tone: 'bg-danger-soft text-danger' },

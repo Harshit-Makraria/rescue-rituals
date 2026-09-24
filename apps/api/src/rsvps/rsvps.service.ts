@@ -90,6 +90,7 @@ export class RsvpsService {
           WHERE id = ${row.id}::uuid`;
       }
       if (promote) await promoteFromWaitlist(tx, eventId, this.notifications);
+      if (isNew) await this.notifyHost(tx, eventId, userId, status, plusOnes);
 
       return this.snapshot(tx, eventId, status, plusOnes);
     }, TX_OPTIONS);
@@ -210,7 +211,29 @@ export class RsvpsService {
     return { filename: `${slug}-guests.csv`, body: '﻿' + lines.join('\r\n') + '\r\n' };
   }
 
-  private async assertHost(eventId: string, userId: string, message: string) {
+/** Tell the host someone joined (or joined the waitlist). Same transaction as the RSVP. */
+  private async notifyHost(tx: Tx, eventId: string, userId: string, status: RsvpStatusValue, plusOnes: number) {
+    const [info] = await tx.$queryRaw<{ creator_id: string; title: string; name: string }[]>`
+      SELECT e.creator_id, e.title, u.name
+      FROM events e JOIN users u ON u.id = ${userId}::uuid
+      WHERE e.id = ${eventId}::uuid`;
+    if (!info || info.creator_id === userId) return; // no self-notifications
+    const party = plusOnes ? ` (+${plusOnes} guest${plusOnes === 1 ? '' : 's'})` : '';
+    await this.notifications.notify(
+      [
+        {
+          userId: info.creator_id,
+          eventId,
+          type: 'new_attendee',
+          title: status === 'going' ? `${info.name}${party} is going to ${info.title}` : `${info.name}${party} joined the waitlist for ${info.title}`,
+          body: 'See your guest list for their details.',
+        },
+      ],
+      tx,
+    );
+  }
+
+    private async assertHost(eventId: string, userId: string, message: string) {
     const event = await this.prisma.event.findFirst({
       where: { id: eventId, deletedAt: null },
       select: { creatorId: true },

@@ -334,7 +334,7 @@ export interface components {
     schemas: {
         NotificationResponse: {
             /** @enum {string} */
-            type: "event_reminder" | "waitlist_promoted" | "event_updated" | "event_cancelled";
+            type: "event_reminder" | "new_attendee" | "waitlist_promoted" | "event_updated" | "event_cancelled";
             id: string;
             title: string;
             body: string;

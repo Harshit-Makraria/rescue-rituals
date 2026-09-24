@@ -901,6 +901,7 @@
           "type": {
             "enum": [
               "event_reminder",
+              "new_attendee",
               "waitlist_promoted",
               "event_updated",
               "event_cancelled"

@@ -13,7 +13,7 @@ The RSVP path never overbooks, even when many people join at the same moment.
 | 🧾 **OpenAPI JSON** | https://events-api-43jh.onrender.com/docs-json |
 | 📄 **Data model & API reference** | [PDF](docs/Data-Model-and-API-Reference.pdf) · [Word](docs/Data-Model-and-API-Reference.docx) |
 | 📮 **Postman collection** | [`docs/events-api.postman_collection.json`](docs/events-api.postman_collection.json) (live URL preset) |
-| 🎥 **Loom walkthrough** | `<add link>` |
+| 🎥 **Loom walkthrough** (5 min) | https://www.loom.com/share/766ac6a236ae49289262c724202d3e8b |
 
 > **Demo logins** (password `Password123!`), or use the one-click buttons on the login page: **event host** `demo@events.dev` (owns the demo events: edit, cancel, guest list) · **attendee** `guest@events.dev` (RSVPs). Any user can host their own events, as on Luma or Meetup.
 > The API runs on Render's free tier. If it has been idle, the first request can take about 30 seconds while it wakes up.
@@ -93,7 +93,7 @@ curl -s -X POST "$API/events/<eventId>/rsvp" -H "Authorization: Bearer $TOKEN"
 - ⭐ **Host guest list:** name, email, phone, party size, note, status and waitlist position, with **CSV export** (safe against spreadsheet formula injection). Contact details are never shown to anyone else
 - ⭐ **Host-only waitlist view** in promotion order
 - ⭐ **Invite links** (`/events/:id?join=1`): opening one shows a "You're invited" banner with one-tap Join; signed-out visitors log in and return to it. Opening the link never RSVPs by itself (a GET must not change data, or link previews would sign people up)
-- ⭐ **In-app notifications:** reminders, "you're off the waitlist", time or location changes, cancellations
+- ⭐ **In-app notifications:** hosts hear when someone RSVPs; attendees get reminders, "you're off the waitlist", time or location changes, cancellations
 - ⭐ **Concurrency-safe RSVPs:** proven by a test (50 simultaneous RSVPs for 10 seats → exactly 10 in) and verified on the live deployment
 - ⭐ **Idempotent RSVP:** double-taps and retries never double-book
 - ⭐ **Optimistic locking** on event edits (409 instead of silently overwriting someone else's change)

@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsOptional } from 'class-validator';
 
-export const NOTIFICATION_TYPES = ['event_reminder', 'waitlist_promoted', 'event_updated', 'event_cancelled'] as const;
+export const NOTIFICATION_TYPES = ['event_reminder', 'new_attendee', 'waitlist_promoted', 'event_updated', 'event_cancelled'] as const;
 export type NotificationTypeValue = (typeof NOTIFICATION_TYPES)[number];
 
 export class NotificationResponse {
