@@ -99,13 +99,13 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
       <Card>
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
           <h2 className="mr-auto text-lg font-bold">Upcoming events</h2>
-          <nav aria-label="Filter by date" className="flex flex-wrap gap-1.5">
+          <nav aria-label="Filter by date" className="-mx-5 flex w-[calc(100%+2.5rem)] gap-1.5 overflow-x-auto px-5 [scrollbar-width:none] sm:mx-0 sm:w-auto sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden">
             {RANGES.map((r) => (
               <Link
                 key={r.id}
                 href={href({ range: r.id })}
                 aria-current={r.id === range.id ? 'true' : undefined}
-                className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm font-medium ${
                   r.id === range.id
                     ? 'border-accent bg-accent-soft text-accent'
                     : 'border-line text-muted hover:border-accent hover:text-ink'

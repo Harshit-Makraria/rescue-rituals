@@ -176,7 +176,7 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
           </Card>
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+        <aside className="order-first space-y-4 lg:order-none lg:sticky lg:top-24 lg:self-start">
           <Card className="space-y-5 p-5">
             <div>
               <p className="text-sm font-semibold text-muted">Attendance</p>

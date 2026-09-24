@@ -110,6 +110,9 @@ export function Sidebar({ user, unread, swaggerUrl }: { user: SessionUser | null
           >
             Get started <Icon name="arrow" size={16} />
           </Link>
+          <Link href="/login" className="mt-2 block text-center text-sm font-semibold opacity-90 hover:opacity-100">
+            I already have an account
+          </Link>
         </div>
       )}
     </div>

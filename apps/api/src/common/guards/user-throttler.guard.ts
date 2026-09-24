@@ -22,6 +22,17 @@ export class UserThrottlerGuard extends ThrottlerGuard {
         // fall through to IP
       }
     }
-    return `ip:${req.ip}`;
+    return `ip:${clientIp(req as Request)}`;
   }
+}
+
+/**
+ * Render sits behind Cloudflare, so `req.ip` (even with trust proxy) is a
+ * Cloudflare edge IP that changes between requests — every request would get a
+ * fresh bucket. Cloudflare sets CF-Connecting-IP to the real client and
+ * overwrites any value a client sends, so it's safe to trust when present.
+ */
+function clientIp(req: Request): string {
+  const cf = req.headers['cf-connecting-ip'];
+  return (typeof cf === 'string' && cf) || req.ip || 'unknown';
 }

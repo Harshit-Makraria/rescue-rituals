@@ -1,16 +1,33 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useRef } from 'react';
 import { login, register, type FormState } from '@/app/actions';
 import { FormError, SubmitButton } from './form-bits';
 
 const input =
   'mt-1.5 block w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none';
 
+// Public demo accounts (created by the API seed, listed in the README).
+const DEMO_PASSWORD = 'Password123!';
+const DEMO_ACCOUNTS = [
+  { label: 'Sign in as host', email: 'demo@events.dev' },
+  { label: 'Sign in as guest', email: 'guest@events.dev' },
+];
+
 export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next: string }) {
   const [state, action] = useActionState<FormState, FormData>(mode === 'login' ? login : register, undefined);
   const isLogin = mode === 'login';
+  const formRef = useRef<HTMLFormElement>(null);
+
+  /** Fill the demo credentials into the form and submit it. */
+  function signInAs(email: string) {
+    const form = formRef.current;
+    if (!form) return;
+    (form.elements.namedItem('email') as HTMLInputElement).value = email;
+    (form.elements.namedItem('password') as HTMLInputElement).value = DEMO_PASSWORD;
+    form.requestSubmit();
+  }
   const otherHref = `/${isLogin ? 'register' : 'login'}${next !== '/' ? `?next=${encodeURIComponent(next)}` : ''}`;
 
   return (
@@ -18,7 +35,7 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next: str
       <h1 className="text-2xl font-extrabold tracking-tight">{isLogin ? 'Welcome back' : 'Create your account'}</h1>
       <p className="mt-1 text-sm text-muted">{isLogin ? 'Sign in to RSVP and host events.' : 'It takes ten seconds.'}</p>
 
-      <form action={action} className="mt-7 space-y-4">
+      <form ref={formRef} action={action} className="mt-7 space-y-4">
         <input type="hidden" name="next" value={next} />
         <FormError error={state?.error} />
         {!isLogin && (
@@ -68,10 +85,24 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next: str
       </p>
 
       {isLogin && (
-        <div className="mt-6 rounded-xl border border-dashed border-line bg-raised px-4 py-3 text-xs leading-relaxed text-muted">
-          <span className="font-semibold text-ink">Reviewing?</span> Use <code className="font-semibold text-ink">demo@events.dev</code>{' '}
-          (hosts the demo events) or <code className="font-semibold text-ink">guest@events.dev</code>, password{' '}
-          <code className="font-semibold text-ink">Password123!</code>
+        <div className="mt-6 rounded-xl border border-dashed border-line bg-raised p-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Reviewing? One-click demo</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {DEMO_ACCOUNTS.map((d) => (
+              <button
+                key={d.email}
+                type="button"
+                onClick={() => signInAs(d.email)}
+                className="rounded-xl border border-line bg-surface px-3 py-2.5 text-left hover:border-accent"
+              >
+                <span className="block text-sm font-semibold">{d.label}</span>
+                <span className="block truncate text-xs text-muted">{d.email}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Password for both: <code className="font-semibold text-ink">{DEMO_PASSWORD}</code>
+          </p>
         </div>
       )}
 

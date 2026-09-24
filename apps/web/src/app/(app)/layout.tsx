@@ -19,11 +19,18 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
     <div className="min-h-screen">
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3 sm:flex-nowrap sm:px-6">
             <div className="lg:hidden">
               <Sidebar user={user} unread={unread} swaggerUrl={`${API_URL}/docs`} />
             </div>
-            <form action="/" role="search" className="relative min-w-0 flex-1 sm:max-w-md">
+            <Link href="/" className="flex items-center gap-2 sm:hidden" aria-label="Gather home">
+              <span className="grid size-8 place-items-center rounded-lg bg-accent text-accent-ink">
+                <Icon name="ticket" size={16} />
+              </span>
+              <span className="font-extrabold tracking-tight">Gather</span>
+            </Link>
+            {/* On phones the search gets its own full-width row below the top bar. */}
+            <form action="/" role="search" className="relative order-last w-full min-w-0 sm:order-none sm:w-auto sm:max-w-md sm:flex-1">
               <Icon name="search" size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
               <label htmlFor="global-search" className="sr-only">
                 Search events
@@ -54,7 +61,7 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
                 </>
               ) : (
                 <>
-                  <Link href="/login" className="rounded-xl px-3 py-2 text-sm font-semibold text-muted hover:text-ink">
+                  <Link href="/login" className="hidden rounded-xl px-3 py-2 text-sm font-semibold text-muted hover:text-ink min-[400px]:block">
                     Log in
                   </Link>
                   <Link href="/register" className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-ink hover:opacity-90">
