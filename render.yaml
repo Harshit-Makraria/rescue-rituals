@@ -1,0 +1,34 @@
+# Render Blueprint: API + PostgreSQL in one click.
+# Render dashboard → New → Blueprint → pick this repo.
+databases:
+  - name: events-db
+    plan: free
+    databaseName: events
+    user: events
+    region: singapore
+
+services:
+  - type: web
+    name: events-api
+    runtime: node
+    plan: free
+    region: singapore # same region as the DB → private network, low latency
+    rootDir: apps/api
+    buildCommand: npm ci && npx prisma generate && npm run build
+    # Migrations + idempotent demo seed run on every deploy, then the server starts.
+    startCommand: npm run render:start
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: events-db
+          property: connectionString # internal URL, never leaves Render's network
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false # set to your Vercel URL after the web app is deployed

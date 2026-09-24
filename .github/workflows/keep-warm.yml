@@ -1,0 +1,16 @@
+# Render's free tier sleeps after 15 idle minutes (≈30–50s cold start).
+# Ping the health endpoint during the review window so reviewers never hit a cold API.
+# Set the repo variable API_URL (Settings → Secrets and variables → Actions → Variables).
+name: Keep API warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.API_URL != '' }}
+    steps:
+      - run: curl -fsS --max-time 60 "${{ vars.API_URL }}/api/v1/health"

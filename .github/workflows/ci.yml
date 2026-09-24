@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    name: API — build + e2e (real Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: events
+          POSTGRES_PASSWORD: events
+          POSTGRES_DB: events_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U events" --health-interval 2s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://events:events@localhost:5432/events_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run build
+      - run: npm run test:e2e
+
+  web:
+    name: Web — typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+        env:
+          API_URL: http://localhost:3001
