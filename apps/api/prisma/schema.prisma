@@ -28,6 +28,19 @@ enum RsvpStatus {
   @@map("rsvp_status")
 }
 
+enum EventCategory {
+  tech
+  music
+  food
+  sports
+  arts
+  networking
+  outdoors
+  other
+
+  @@map("event_category")
+}
+
 enum NotificationType {
   event_reminder
   waitlist_promoted
@@ -55,27 +68,30 @@ model User {
 }
 
 model Event {
-  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  creatorId       String      @map("creator_id") @db.Uuid
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  creatorId       String        @map("creator_id") @db.Uuid
   title           String
   description     String?
   location        String?
-  startsAt        DateTime    @map("starts_at") @db.Timestamptz(3)
-  endsAt          DateTime    @map("ends_at") @db.Timestamptz(3)
+  startsAt        DateTime      @map("starts_at") @db.Timestamptz(3)
+  endsAt          DateTime      @map("ends_at") @db.Timestamptz(3)
   /// null = unlimited
   capacity        Int?
   /// Denormalised count of `going` RSVPs, maintained in the RSVP transaction
-  goingCount      Int         @default(0) @map("going_count")
-  status          EventStatus @default(published)
+  goingCount      Int           @default(0) @map("going_count")
+  status          EventStatus   @default(published)
   /// Optimistic-lock version, bumped on every edit
-  version         Int         @default(1)
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt       DateTime?   @map("deleted_at") @db.Timestamptz(3)
+  version         Int           @default(1)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(3)
   /// Remind attendees this many minutes before start; null = no reminder
-  reminderMinutes Int?        @map("reminder_minutes")
+  reminderMinutes Int?          @map("reminder_minutes")
   /// Set when the reminder job has claimed this event (reset if the time changes)
-  reminderSentAt  DateTime?   @map("reminder_sent_at") @db.Timestamptz(3)
+  reminderSentAt  DateTime?     @map("reminder_sent_at") @db.Timestamptz(3)
+  category        EventCategory @default(other)
+  /// Online meeting link; only revealed to people going and to the host
+  meetingUrl      String?       @map("meeting_url")
 
   creator       User           @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   rsvps         Rsvp[]

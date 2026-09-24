@@ -11,6 +11,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { promoteFromWaitlist } from '../rsvps/waitlist';
 import { eventInclude, toEventResponse } from './event.mapper';
+import { buildIcs } from './ics';
 import { CreateEventDto, EventPage, EventResponse, ListEventsQuery, UpdateEventDto } from './events.dto';
 
 @Injectable()
@@ -36,11 +37,13 @@ export class EventsService {
         endsAt,
         capacity: dto.capacity ?? null,
         reminderMinutes: dto.reminderMinutes ?? null,
+        category: dto.category ?? 'other',
+        meetingUrl: dto.meetingUrl || null,
         status: dto.status ?? 'published',
       },
       include: eventInclude,
     });
-    return toEventResponse(event, null);
+    return toEventResponse(event, null, userId);
   }
 
   /** Upcoming published events, keyset-paginated on (startsAt, id) — served by idx_events_upcoming. */
@@ -54,6 +57,7 @@ export class EventsService {
         ...(query.to && { lt: new Date(query.to) }),
       },
       ...(query.creatorId && { creatorId: query.creatorId }),
+      ...(query.category && { category: query.category }),
       ...(query.q && {
         OR: [
           { title: { contains: query.q, mode: 'insensitive' } },
@@ -94,7 +98,21 @@ export class EventsService {
     if (!event || (event.status === 'draft' && event.creatorId !== userId)) {
       throw new NotFoundException('Event not found.');
     }
-    return toEventResponse(event, userId ? (mine?.status ?? null) : undefined);
+    return toEventResponse(event, userId ? (mine?.status ?? null) : undefined, userId);
+  }
+
+  /** iCalendar file for a published event. The private meeting link is never included. */
+  async calendar(id: string): Promise<{ filename: string; body: string }> {
+    const event = await this.prisma.event.findFirst({ where: { id, deletedAt: null, status: 'published' } });
+    if (!event) throw new NotFoundException('Event not found.');
+    const webUrl = (process.env.WEB_URL ?? 'https://rescue-rituals.vercel.app').replace(/\/$/, '');
+    const body = buildIcs({
+      ...event,
+      location: event.location ?? (event.meetingUrl ? 'Online (link shared with attendees)' : null),
+      url: `${webUrl}/events/${event.id}`,
+    });
+    const filename = `${event.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'event'}.ics`;
+    return { filename, body };
   }
 
   async update(id: string, userId: string, dto: UpdateEventDto): Promise<EventResponse> {

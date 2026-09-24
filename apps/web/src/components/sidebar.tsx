@@ -77,8 +77,11 @@ export function Sidebar({ user, unread, swaggerUrl }: { user: SessionUser | null
         <span className="text-lg font-extrabold tracking-tight">Gather</span>
       </Link>
 
-      <nav aria-label="Main" className="flex-1 space-y-7 overflow-y-auto">
+      <nav aria-label="Main" className="flex-1 overflow-y-auto">
         <NavGroup title="Menu" items={menu} pathname={pathname} />
+      </nav>
+
+      <nav aria-label="Resources">
         <NavGroup title="Resources" items={resources} pathname={pathname} />
       </nav>
 

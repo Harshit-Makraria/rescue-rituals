@@ -202,6 +202,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events/{id}/calendar.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the event as an iCalendar (.ics) file for Google, Apple or Outlook calendars. */
+        get: operations["EventsController_calendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events/{id}": {
         parameters: {
             query?: never;
@@ -237,6 +254,23 @@ export interface paths {
         post: operations["RsvpsController_join"];
         /** Cancel your RSVP. Your seat goes to the next person on the waitlist. */
         delete: operations["RsvpsController_leave"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/events/{id}/waitlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The waitlist, in the order people will be promoted. Host only. */
+        get: operations["RsvpsController_waitlist"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -336,6 +370,10 @@ export interface components {
         EventResponse: {
             /** @enum {string} */
             status: "draft" | "published" | "cancelled";
+            /** @enum {string} */
+            category: "tech" | "music" | "food" | "sports" | "arts" | "networking" | "outdoors" | "other";
+            /** @description The online link. Present only for the host and people going. */
+            meetingUrl?: string | null;
             /**
              * @description The caller's RSVP status — present only when a valid token is sent.
              * @enum {string|null}
@@ -356,6 +394,8 @@ export interface components {
             version: number;
             /** @description Minutes before start that attendees get a reminder; null = none */
             reminderMinutes: number | null;
+            /** @description True if the event has an online link (the link itself may be hidden from you) */
+            hasMeetingLink: boolean;
             host: components["schemas"]["HostResponse"];
             /** @description Names of the first few people going (for avatar stacks) */
             attendeePreview: string[];
@@ -373,6 +413,11 @@ export interface components {
             nextCursor: string | null;
         };
         CreateEventDto: {
+            /**
+             * @default other
+             * @enum {string}
+             */
+            category: "tech" | "music" | "food" | "sports" | "arts" | "networking" | "outdoors" | "other";
             /**
              * @description `draft` events are visible only to their host.
              * @default published
@@ -401,12 +446,23 @@ export interface components {
              */
             capacity?: number | null;
             /**
+             * Format: uri
+             * @description Online meeting link (https). Only people going and the host can see it.
+             * @example https://meet.google.com/abc-defg-hij
+             */
+            meetingUrl?: string | null;
+            /**
              * @description Remind attendees this many minutes before the start (5 min – 7 days). Omit or null for no reminder.
              * @example 60
              */
             reminderMinutes?: number | null;
         };
         UpdateEventDto: {
+            /**
+             * @default other
+             * @enum {string}
+             */
+            category: "tech" | "music" | "food" | "sports" | "arts" | "networking" | "outdoors" | "other";
             /**
              * @description `draft` events are visible only to their host.
              * @default published
@@ -434,6 +490,12 @@ export interface components {
              * @example 50
              */
             capacity?: number | null;
+            /**
+             * Format: uri
+             * @description Online meeting link (https). Only people going and the host can see it.
+             * @example https://meet.google.com/abc-defg-hij
+             */
+            meetingUrl?: string | null;
             /**
              * @description Remind attendees this many minutes before the start (5 min – 7 days). Omit or null for no reminder.
              * @example 60
@@ -757,6 +819,7 @@ export interface operations {
     EventsController_list: {
         parameters: {
             query?: {
+                category?: "tech" | "music" | "food" | "sports" | "arts" | "networking" | "outdoors" | "other";
                 /** @description Only events starting at/after this time. Defaults to now. */
                 from?: string;
                 /** @description Only events starting before this time. */
@@ -806,6 +869,34 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EventsController_calendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description iCalendar file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/calendar": string;
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -966,6 +1057,34 @@ export interface operations {
             };
             /** @description You haven't RSVP'd */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RsvpsController_waitlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendeePage"];
+                };
+            };
+            /** @description Not the host */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

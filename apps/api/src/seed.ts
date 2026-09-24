@@ -3,7 +3,7 @@
  * Creates demo users once, and demo events only when there are no upcoming ones,
  * so reviewers always land on a populated app.
  */
-import { PrismaClient } from '@prisma/client';
+import { EventCategory, PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
@@ -32,6 +32,21 @@ async function main() {
     ),
   );
   const [host, , ...crowd] = users;
+
+  // Backfill newer fields on the demo events (idempotent: only touches rows still at defaults).
+  const demoMeta: Record<string, { category: EventCategory; meetingUrl?: string; reminderMinutes?: number }> = {
+    'Postgres Performance Night': { category: 'tech', reminderMinutes: 60 },
+    'Founders & Builders Breakfast': { category: 'networking', reminderMinutes: 1440 },
+    'NestJS at Scale — Remote Session': { category: 'tech', meetingUrl: 'https://meet.google.com/gat-herd-emo', reminderMinutes: 15 },
+    'Weekend Trek: Nandi Hills Sunrise': { category: 'outdoors', reminderMinutes: 180 },
+    'GenAI Product Demo Day': { category: 'tech', reminderMinutes: 60 },
+  };
+  const backfill = async () => {
+    for (const [title, meta] of Object.entries(demoMeta)) {
+      await prisma.event.updateMany({ where: { title, creatorId: host.id, category: 'other' }, data: meta });
+    }
+  };
+  await backfill();
 
   const upcoming = await prisma.event.count({ where: { startsAt: { gt: new Date() }, deletedAt: null } });
   if (upcoming > 0) {
@@ -82,6 +97,7 @@ async function main() {
       },
     });
   }
+  await backfill();
   console.log(`Seed: created ${events.length} events. Log in as demo@events.dev or guest@events.dev / ${PASSWORD}`);
 }
 

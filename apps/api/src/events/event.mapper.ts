@@ -17,7 +17,16 @@ export const eventInclude = {
   },
 } as const;
 
-export function toEventResponse(event: EventWithHost, myRsvpStatus?: RsvpStatus | null): EventResponse {
+/**
+ * `viewerId` controls field-level access: the meeting link is revealed only to
+ * the host and to people going. Everyone else just sees `hasMeetingLink`.
+ */
+export function toEventResponse(
+  event: EventWithHost,
+  myRsvpStatus?: RsvpStatus | null,
+  viewerId?: string | null,
+): EventResponse {
+  const canSeeLink = Boolean(viewerId && (viewerId === event.creatorId || myRsvpStatus === 'going'));
   return {
     id: event.id,
     title: event.title,
@@ -31,6 +40,9 @@ export function toEventResponse(event: EventWithHost, myRsvpStatus?: RsvpStatus 
     status: event.status,
     version: event.version,
     reminderMinutes: event.reminderMinutes,
+    category: event.category,
+    hasMeetingLink: Boolean(event.meetingUrl),
+    ...(canSeeLink && { meetingUrl: event.meetingUrl }),
     host: event.creator,
     attendeePreview: event.rsvps?.map((r) => r.user.name) ?? [],
     createdAt: event.createdAt,

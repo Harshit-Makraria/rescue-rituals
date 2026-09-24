@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { decodeCursor, encodeCursor } from '../common/pagination';
 import { RsvpStatusValue } from '../events/events.dto';
@@ -103,6 +103,27 @@ export class RsvpsService {
       items: page.map((r) => ({ userId: r.user.id, name: r.user.name, joinedAt: r.updatedAt })),
       total: event.goingCount,
       nextCursor: hasMore && last ? encodeCursor(last.updatedAt, last.id) : null,
+    };
+  }
+
+  /** Waitlist in promotion order. Host only: guests shouldn't see who else is waiting. */
+  async waitlist(eventId: string, userId: string): Promise<AttendeePage> {
+    const event = await this.prisma.event.findFirst({
+      where: { id: eventId, deletedAt: null },
+      select: { creatorId: true },
+    });
+    if (!event) throw new NotFoundException('Event not found.');
+    if (event.creatorId !== userId) throw new ForbiddenException('Only the host can see the waitlist.');
+    const rows = await this.prisma.rsvp.findMany({
+      where: { eventId, status: 'waitlisted' },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      take: 200,
+      select: { updatedAt: true, user: { select: { id: true, name: true } } },
+    });
+    return {
+      items: rows.map((r) => ({ userId: r.user.id, name: r.user.name, joinedAt: r.updatedAt })),
+      total: rows.length,
+      nextCursor: null,
     };
   }
 

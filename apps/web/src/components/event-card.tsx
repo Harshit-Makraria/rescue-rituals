@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { EventItem } from '@/lib/api';
+import { categoryOf } from '@/lib/categories';
 import { DateStub, LocalTime } from './local-time';
 import { EventStatus } from './status-pill';
 import { AvatarStack, Icon, ProgressRing } from './ui';
@@ -27,7 +28,14 @@ export function EventCard({ event }: { event: EventItem }) {
       <div className="flex min-w-0 items-center gap-3.5">
         <DateStub iso={event.startsAt} />
         <div className="min-w-0">
-          <p className="truncate font-semibold group-hover:text-accent">{event.title}</p>
+          <p className="flex items-center gap-2">
+            <span className="truncate font-semibold group-hover:text-accent">{event.title}</span>
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-muted">
+            <span className={`size-1.5 rounded-full ${categoryOf(event.category).dot}`} aria-hidden />
+            {categoryOf(event.category).label}
+            {event.hasMeetingLink && <span className="rounded bg-raised px-1.5 py-px">Online</span>}
+          </p>
           <p className="mt-0.5 flex items-center gap-1 truncate text-sm text-muted">
             <Icon name="pin" size={14} className="shrink-0" />
             <span className="truncate">{event.location || 'Location TBA'}</span>

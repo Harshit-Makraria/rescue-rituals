@@ -331,6 +331,24 @@
         "operationId": "EventsController_list",
         "parameters": [
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "tech",
+                "music",
+                "food",
+                "sports",
+                "arts",
+                "networking",
+                "outdoors",
+                "other"
+              ]
+            }
+          },
+          {
             "name": "from",
             "required": false,
             "in": "query",
@@ -439,6 +457,40 @@
           }
         ],
         "summary": "Create an event. You become its host.",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/{id}/calendar.ics": {
+      "get": {
+        "operationId": "EventsController_calendar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "iCalendar file",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
+          }
+        },
+        "summary": "Download the event as an iCalendar (.ics) file for Google, Apple or Outlook calendars.",
         "tags": [
           "events"
         ]
@@ -640,6 +692,45 @@
           }
         ],
         "summary": "Cancel your RSVP. Your seat goes to the next person on the waitlist.",
+        "tags": [
+          "rsvps"
+        ]
+      }
+    },
+    "/api/v1/events/{id}/waitlist": {
+      "get": {
+        "operationId": "RsvpsController_waitlist",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendeePage"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the host"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The waitlist, in the order people will be promoted. Host only.",
         "tags": [
           "rsvps"
         ]
@@ -942,6 +1033,24 @@
             ],
             "type": "string"
           },
+          "category": {
+            "enum": [
+              "tech",
+              "music",
+              "food",
+              "sports",
+              "arts",
+              "networking",
+              "outdoors",
+              "other"
+            ],
+            "type": "string"
+          },
+          "meetingUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "The online link. Present only for the host and people going."
+          },
           "myRsvpStatus": {
             "nullable": true,
             "description": "The caller's RSVP status — present only when a valid token is sent.",
@@ -994,6 +1103,10 @@
             "nullable": true,
             "description": "Minutes before start that attendees get a reminder; null = none"
           },
+          "hasMeetingLink": {
+            "type": "boolean",
+            "description": "True if the event has an online link (the link itself may be hidden from you)"
+          },
           "host": {
             "$ref": "#/components/schemas/HostResponse"
           },
@@ -1015,6 +1128,7 @@
         },
         "required": [
           "status",
+          "category",
           "id",
           "title",
           "description",
@@ -1026,6 +1140,7 @@
           "seatsLeft",
           "version",
           "reminderMinutes",
+          "hasMeetingLink",
           "host",
           "attendeePreview",
           "createdAt",
@@ -1069,6 +1184,20 @@
       "CreateEventDto": {
         "type": "object",
         "properties": {
+          "category": {
+            "enum": [
+              "tech",
+              "music",
+              "food",
+              "sports",
+              "arts",
+              "networking",
+              "outdoors",
+              "other"
+            ],
+            "type": "string",
+            "default": "other"
+          },
           "status": {
             "description": "`draft` events are visible only to their host.",
             "enum": [
@@ -1111,6 +1240,14 @@
             "example": 50,
             "minimum": 1,
             "maximum": 100000
+          },
+          "meetingUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Online meeting link (https). Only people going and the host can see it.",
+            "example": "https://meet.google.com/abc-defg-hij",
+            "maxLength": 500,
+            "format": "uri"
           },
           "reminderMinutes": {
             "type": "number",
@@ -1130,6 +1267,20 @@
       "UpdateEventDto": {
         "type": "object",
         "properties": {
+          "category": {
+            "enum": [
+              "tech",
+              "music",
+              "food",
+              "sports",
+              "arts",
+              "networking",
+              "outdoors",
+              "other"
+            ],
+            "type": "string",
+            "default": "other"
+          },
           "status": {
             "description": "`draft` events are visible only to their host.",
             "enum": [
@@ -1172,6 +1323,14 @@
             "example": 50,
             "minimum": 1,
             "maximum": 100000
+          },
+          "meetingUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Online meeting link (https). Only people going and the host can see it.",
+            "example": "https://meet.google.com/abc-defg-hij",
+            "maxLength": 500,
+            "format": "uri"
           },
           "reminderMinutes": {
             "type": "number",

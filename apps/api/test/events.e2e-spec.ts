@@ -254,4 +254,61 @@ describe('Events API (e2e)', () => {
       expect(types).toEqual(expect.arrayContaining(['event_updated', 'event_cancelled']));
     });
   });
+  describe('categories, calendar, meeting links, waitlist', () => {
+    it('filters the list by category', async () => {
+      const host = await register();
+      const { body: music } = await createEvent(host.accessToken, { title: 'Jazz night', category: 'music' }).expect(201);
+      await createEvent(host.accessToken, { title: 'Board games', category: 'other' }).expect(201);
+      const { body } = await request(app.getHttpServer()).get(`/api/v1/events?category=music&creatorId=${host.user.id}`).expect(200);
+      expect(body.items.map((e: { id: string }) => e.id)).toEqual([music.id]);
+      await request(app.getHttpServer()).get('/api/v1/events?category=nope').expect(400);
+    });
+
+    it('reveals the meeting link only to the host and people going', async () => {
+      const host = await register();
+      const [going, stranger] = [await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, { meetingUrl: 'https://meet.example.com/abc' }).expect(201);
+      expect(event.meetingUrl).toBe('https://meet.example.com/abc'); // host
+      await createEvent(host.accessToken, { meetingUrl: 'http://insecure.example.com' }).expect(400);
+
+      const server = app.getHttpServer();
+      const get = (t?: string) => {
+        const r = request(server).get(`/api/v1/events/${event.id}`);
+        return (t ? r.set('Authorization', `Bearer ${t}`) : r).expect(200);
+      };
+      const anon = (await get()).body;
+      expect(anon.hasMeetingLink).toBe(true);
+      expect(anon.meetingUrl).toBeUndefined();
+      expect((await get(stranger.accessToken)).body.meetingUrl).toBeUndefined();
+
+      await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${going.accessToken}`).expect(200);
+      expect((await get(going.accessToken)).body.meetingUrl).toBe('https://meet.example.com/abc');
+      const list = await request(server).get(`/api/v1/events?creatorId=${host.user.id}`).expect(200);
+      expect(list.body.items.every((e: { meetingUrl?: string }) => e.meetingUrl === undefined)).toBe(true);
+    });
+
+    it('serves a valid .ics file without the private link', async () => {
+      const host = await register();
+      const { body: event } = await createEvent(host.accessToken, {
+        title: 'Calendar, test; event', meetingUrl: 'https://meet.example.com/secret',
+      }).expect(201);
+      const res = await request(app.getHttpServer()).get(`/api/v1/events/${event.id}/calendar.ics`).expect(200);
+      expect(res.headers['content-type']).toContain('text/calendar');
+      expect(res.headers['content-disposition']).toContain('.ics');
+      expect(res.text).toContain('BEGIN:VEVENT');
+      expect(res.text).toContain('SUMMARY:Calendar\\, test\\; event'); // RFC 5545 escaping
+      expect(res.text).not.toContain('secret');
+    });
+
+    it('shows the waitlist to the host only, in promotion order', async () => {
+      const host = await register();
+      const [a, b, c] = [await register(), await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, { capacity: 1 }).expect(201);
+      const server = app.getHttpServer();
+      for (const g of [a, b, c]) await request(server).post(`/api/v1/events/${event.id}/rsvp`).set('Authorization', `Bearer ${g.accessToken}`).expect(200);
+      await request(server).get(`/api/v1/events/${event.id}/waitlist`).set('Authorization', `Bearer ${a.accessToken}`).expect(403);
+      const { body } = await request(server).get(`/api/v1/events/${event.id}/waitlist`).set('Authorization', `Bearer ${host.accessToken}`).expect(200);
+      expect(body.items.map((p: { userId: string }) => p.userId)).toEqual([b.user.id, c.user.id]);
+    });
+  });
 });

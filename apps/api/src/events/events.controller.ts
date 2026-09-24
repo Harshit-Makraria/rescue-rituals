@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -19,9 +20,11 @@ import {
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { JwtAuthGuard, OptionalJwtAuthGuard } from '../auth/jwt.guards';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
 import { CreateEventDto, EventPage, EventResponse, ListEventsQuery, UpdateEventDto } from './events.dto';
@@ -37,6 +40,20 @@ export class EventsController {
   @ApiOkResponse({ type: EventPage })
   list(@Query() query: ListEventsQuery): Promise<EventPage> {
     return this.events.list(query);
+  }
+
+  /** Download the event as an iCalendar (.ics) file for Google, Apple or Outlook calendars. */
+  @Get(':id/calendar.ics')
+  @ApiProduces('text/calendar')
+  @ApiOkResponse({ description: 'iCalendar file', schema: { type: 'string' } })
+  @ApiNotFoundResponse()
+  async calendar(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
+    const { filename, body } = await this.events.calendar(id);
+    res
+      .type('text/calendar; charset=utf-8')
+      .setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      .setHeader('Cache-Control', 'public, max-age=60')
+      .send(body);
   }
 
   /** Get one event. Send a token to also get `myRsvpStatus`. */

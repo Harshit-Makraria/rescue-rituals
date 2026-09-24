@@ -5,7 +5,8 @@ import { LoadMore } from '@/components/load-more';
 import { DateStub, LocalTime } from '@/components/local-time';
 import { StatusPill } from '@/components/status-pill';
 import { Card, Icon } from '@/components/ui';
-import { api, currentUser } from '@/lib/api';
+import { api, currentUser, type EventItem } from '@/lib/api';
+import { CATEGORIES } from '@/lib/categories';
 
 const RANGES = [
   { id: 'all', label: 'All upcoming', hours: null },
@@ -18,11 +19,14 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
   const params = await searchParams;
   const query = typeof params.q === 'string' ? params.q.trim() : '';
   const range = RANGES.find((r) => r.id === params.range) ?? RANGES[0];
+  const category = CATEGORIES.find((c) => c.id === params.category)?.id;
   const to = range.hours ? new Date(Date.now() + range.hours * 3_600_000).toISOString() : undefined;
 
   const [client, user] = [await api(), await currentUser()];
   const [list, mine] = await Promise.all([
-    client.GET('/api/v1/events', { params: { query: { q: query || undefined, to } } }),
+    client.GET('/api/v1/events', {
+      params: { query: { q: query || undefined, to, category: category as EventItem['category'] | undefined } },
+    }),
     user ? client.GET('/api/v1/users/me/rsvps') : Promise.resolve(null),
   ]);
   const { data, error } = list;
@@ -30,14 +34,17 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
 
   // Feature the most popular event on the first page (soonest wins a tie).
   const featured =
-    !query && data?.items.length
+    !query && !category && data?.items.length
       ? [...data.items].sort((a, b) => b.goingCount - a.goingCount || a.startsAt.localeCompare(b.startsAt))[0]
       : null;
 
-  const chipHref = (id: string) => {
+  const href = (change: { range?: string; category?: string | null }) => {
     const sp = new URLSearchParams();
     if (query) sp.set('q', query);
-    if (id !== 'all') sp.set('range', id);
+    const r = change.range ?? range.id;
+    if (r !== 'all') sp.set('range', r);
+    const c = change.category === undefined ? category : change.category;
+    if (c) sp.set('category', c);
     const s = sp.toString();
     return s ? `/?${s}` : '/';
   };
@@ -96,7 +103,7 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
             {RANGES.map((r) => (
               <Link
                 key={r.id}
-                href={chipHref(r.id)}
+                href={href({ range: r.id })}
                 aria-current={r.id === range.id ? 'true' : undefined}
                 className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
                   r.id === range.id
@@ -109,6 +116,24 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
             ))}
           </nav>
         </div>
+        <nav aria-label="Filter by category" className="flex gap-1.5 overflow-x-auto border-b border-line px-5 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {[{ id: null, label: 'All categories', dot: '' }, ...CATEGORIES].map((c) => {
+            const active = (c.id ?? undefined) === category;
+            return (
+              <Link
+                key={c.id ?? 'all'}
+                href={href({ category: c.id })}
+                aria-current={active ? 'true' : undefined}
+                className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium ${
+                  active ? 'bg-ink text-bg' : 'bg-raised text-muted hover:text-ink'
+                }`}
+              >
+                {c.dot && <span className={`size-2 rounded-full ${c.dot}`} aria-hidden />}
+                {c.label}
+              </Link>
+            );
+          })}
+        </nav>
 
         {error || !data ? (
           <p role="alert" className="m-5 rounded-xl bg-danger-soft px-4 py-3 text-danger">
@@ -119,7 +144,9 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
             <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent">
               <Icon name="calendar" size={26} />
             </span>
-            <p className="mt-4 text-lg font-bold">{query ? `No events match “${query}”` : 'Nothing scheduled in this range'}</p>
+            <p className="mt-4 text-lg font-bold">
+              {query ? `No events match “${query}”` : category ? 'No upcoming events in this category' : 'Nothing scheduled in this range'}
+            </p>
             <p className="mt-1 text-muted">
               {user ? (
                 <Link href="/events/new" className="font-semibold text-accent">
@@ -136,7 +163,7 @@ export default async function DiscoverPage({ searchParams }: PageProps<'/'>) {
             {data.items.map((event) => (
               <EventCard key={event.id} event={event} />
             ))}
-            <LoadMore initialCursor={data.nextCursor} q={query} to={to} />
+            <LoadMore initialCursor={data.nextCursor} q={query} to={to} category={category} />
           </div>
         )}
       </Card>

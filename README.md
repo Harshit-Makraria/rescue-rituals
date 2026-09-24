@@ -85,6 +85,10 @@ curl -s -X POST "$API/events/<eventId>/rsvp" -H "Authorization: Bearer $TOKEN"
 - ⭐ **Full-stack Next.js app** consuming the API
 - ⭐ **Waitlist with automatic promotion** when someone cancels, or when the host raises the capacity
 - ⭐ **Event reminders:** the host picks "1 hour before" (or 15 min to 7 days), and a scheduled job notifies everyone going. It's safe to run on several instances at once
+- ⭐ **Categories** (Tech, Music, Food…) with filter chips, backed by a partial index that matches the pagination order
+- ⭐ **Private online links:** an event's meeting URL is revealed only to the host and people going. The authorization is per field, not per route
+- ⭐ **Add to calendar:** an RFC 5545 `.ics` download (escaped, folded, with a 1-hour alarm) plus a Google Calendar link; the private link is never included
+- ⭐ **Host-only waitlist view** in promotion order, and a **Share** button (native share sheet on phones)
 - ⭐ **In-app notifications:** reminders, "you're off the waitlist", time or location changes, cancellations
 - ⭐ **Concurrency-safe RSVPs:** proven by a test (50 simultaneous RSVPs for 10 seats → exactly 10 in) and verified on the live deployment
 - ⭐ **Idempotent RSVP:** double-taps and retries never double-book
@@ -158,6 +162,8 @@ erDiagram
     event_status status "draft | published | cancelled"
     int version "optimistic lock"
     timestamptz deleted_at "soft delete"
+    event_category category "tech | music | food | …"
+    text meeting_url "revealed to host + going only"
     int reminder_minutes "NULL = no reminder"
     timestamptz reminder_sent_at "claimed by the job"
   }
@@ -192,6 +198,8 @@ erDiagram
 | Partial index on `events (starts_at)` for events that still owe a reminder | The reminder job scans only rows it might send |
 | Partial unique `(user_id, event_id, type) WHERE type = 'event_reminder'` | At most one reminder per person per event |
 | `(user_id, created_at DESC)` on `notifications` | The notification inbox |
+| Partial index `(category, starts_at, id)` on published events | Category browsing uses the same keyset order as the main list |
+| `CHECK (meeting_url ~ '^https://')` | Only secure meeting links can be stored |
 
 **Why a denormalised `going_count`?** Event lists are read far more often than RSVPs are written. A counter that's updated in the same transaction as the RSVP row is O(1) to read, instead of a `COUNT(*)` for every card on every page load. The CHECK constraint keeps the counter honest.
 
@@ -270,7 +278,7 @@ Base URL: `https://events-api-43jh.onrender.com/api/v1` · interactive docs: **[
 | POST | `/auth/login` | – | Log in → same shape |
 | POST | `/auth/refresh` | – | Rotate tokens; reusing an old refresh token revokes the session |
 | POST | `/auth/logout` | JWT | Revoke the refresh token |
-| GET | `/events` | – | Upcoming published events · `?q&from&to&creatorId&limit&cursor` |
+| GET | `/events` | – | Upcoming published events · `?q&from&to&category&creatorId&limit&cursor` |
 | GET | `/events/:id` | optional | Event details; adds `myRsvpStatus` when signed in |
 | POST | `/events` | JWT | Create an event (you become the host) |
 | PATCH | `/events/:id` | JWT · host | Update; send `version` for optimistic locking |
@@ -278,6 +286,8 @@ Base URL: `https://events-api-43jh.onrender.com/api/v1` · interactive docs: **[
 | POST | `/events/:id/rsvp` | JWT | RSVP → `going` or `waitlisted` (idempotent) |
 | DELETE | `/events/:id/rsvp` | JWT | Cancel your RSVP; promotes the next person on the waitlist |
 | GET | `/events/:id/attendees` | – | People going, in the order they got a seat (paginated) |
+| GET | `/events/:id/waitlist` | JWT · host | The waitlist in promotion order (403 for anyone else) |
+| GET | `/events/:id/calendar.ics` | – | iCalendar download (`text/calendar`) |
 | GET | `/users/me` | JWT | Profile with hosting and going counts |
 | GET | `/users/me/events` | JWT | Events you host (drafts and past included) |
 | GET | `/users/me/rsvps` | JWT | Events you're going to or waitlisted for |
@@ -309,6 +319,7 @@ Authorization: Bearer <token>
 - **Passwords** are hashed with **argon2id**. Login errors are generic, so they don't reveal which emails have accounts.
 - **Access token** (15 min) plus **refresh token** (7 days). Refresh tokens are **rotated** on every use, and only their SHA-256 hash is stored. Reusing an old refresh token (a sign of theft) revokes the session.
 - **Authorization:** for edits, the ownership check is part of the `UPDATE … WHERE creator_id = $user` statement itself, so there's no gap between checking and writing. Drafts return `404` to non-hosts, so their existence isn't leaked.
+- **Field-level authorization:** `meetingUrl` is added to a response only when the viewer is the host or has a `going` RSVP. Everyone else, including list endpoints and the `.ics` file, just gets `hasMeetingLink: true`. The rule lives in one mapper, so no endpoint can leak it by accident.
 - **Input:** a global `ValidationPipe` with `whitelist` and `forbidNonWhitelisted` rejects unknown fields (mass assignment). All SQL is parameterised, including the raw queries.
 - **Transport and headers:** `helmet`, a CORS allowlist, and `trust proxy` for real client IPs behind Render.
 - **Rate limiting** is keyed by **user** when a token is present and by IP otherwise. Every browser request reaches the API from Vercel's server IPs, so limiting by IP alone would throttle all users together.
@@ -324,8 +335,8 @@ Next.js 16 (App Router), deployed on Vercel.
 
 | Route | What it does |
 |---|---|
-| `/` | Upcoming events: search, cards with a seats-left meter, "Load more" (cursor) |
-| `/events/[id]` | Details, host, attendee list, RSVP / waitlist / cancel, host tools |
+| `/` | Discover: featured event, date-range and **category** chips, the event table, "Load more" (cursor) |
+| `/events/[id]` | Details, category, attendee list, RSVP / waitlist / cancel, **Join online** (people going only), add to calendar, share; for the host: the waitlist and edit/cancel |
 | `/events/new` · `/events/[id]/edit` | Create and edit forms: title, description, date, start and end time, location, capacity, visibility. The host picks local times; the API stores UTC. An end time before the start time means the event ends the next day |
 | `/docs` | This documentation, with rendered diagrams and an API reference generated from the OpenAPI spec |
 | `/me` | Filter list: Going · Waitlisted · Hosting · Past, with counts |
@@ -377,6 +388,10 @@ cd apps/api && npm run test:e2e
 | Capacity | Can't be lowered below the number already going; raising it promotes the waitlist and notifies those promoted |
 | **Reminders** | **Two job runs at once → each reminder sent exactly once**; events outside their window are skipped |
 | Notifications | Time changes and cancellations notify attendees; mark all as read |
+| Categories | Filter returns only that category; an unknown category → 400 |
+| **Meeting links** | Hidden from anonymous users, strangers and lists; shown to the host and people going; `http://` rejected |
+| Calendar | `.ics` has the right content type, RFC 5545 escaping, and **never contains the private link** |
+| Waitlist view | Host sees it in promotion order; guests get 403 |
 
 ---
 

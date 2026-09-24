@@ -2,6 +2,7 @@ import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsUrl,
   IsIn,
   IsInt,
   IsOptional,
@@ -16,6 +17,8 @@ import {
 export const EVENT_STATUSES = ['draft', 'published', 'cancelled'] as const;
 export type EventStatusValue = (typeof EVENT_STATUSES)[number];
 export const RSVP_STATUSES = ['going', 'waitlisted', 'cancelled'] as const;
+export const EVENT_CATEGORIES = ['tech', 'music', 'food', 'sports', 'arts', 'networking', 'outdoors', 'other'] as const;
+export type EventCategoryValue = (typeof EVENT_CATEGORIES)[number];
 export type RsvpStatusValue = (typeof RSVP_STATUSES)[number];
 
 export class CreateEventDto {
@@ -52,6 +55,17 @@ export class CreateEventDto {
   @Min(1)
   @Max(100_000)
   capacity?: number | null;
+
+  @IsOptional()
+  @ApiProperty({ enum: EVENT_CATEGORIES, default: 'other', required: false })
+  @IsIn(EVENT_CATEGORIES)
+  category?: EventCategoryValue;
+
+  /** Online meeting link (https). Only people going and the host can see it. @example "https://meet.google.com/abc-defg-hij" */
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'meetingUrl must be an https:// link' })
+  @MaxLength(500)
+  meetingUrl?: string | null;
 
   /** Remind attendees this many minutes before the start (5 min – 7 days). Omit or null for no reminder. @example 60 */
   @IsOptional()
@@ -100,6 +114,11 @@ export class ListEventsQuery {
   @IsUUID()
   creatorId?: string;
 
+  @IsOptional()
+  @ApiProperty({ enum: EVENT_CATEGORIES, required: false })
+  @IsIn(EVENT_CATEGORIES)
+  category?: EventCategoryValue;
+
   /** Opaque cursor from the previous page's `nextCursor`. */
   @IsOptional()
   @IsString()
@@ -134,6 +153,13 @@ export class EventResponse {
   version: number;
   /** Minutes before start that attendees get a reminder; null = none */
   reminderMinutes: number | null;
+  @ApiProperty({ enum: EVENT_CATEGORIES })
+  category: EventCategoryValue;
+  /** True if the event has an online link (the link itself may be hidden from you) */
+  hasMeetingLink: boolean;
+  /** The online link. Present only for the host and people going. */
+  @ApiProperty({ type: String, nullable: true, required: false })
+  meetingUrl?: string | null;
   host: HostResponse;
   /** Names of the first few people going (for avatar stacks) */
   attendeePreview: string[];

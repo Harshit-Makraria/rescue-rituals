@@ -6,7 +6,17 @@ import type { EventItem } from '@/lib/api';
 import { EventCard } from './event-card';
 
 /** Cursor pagination: fetches the next page through a server action and appends it. */
-export function LoadMore({ initialCursor, q, to }: { initialCursor: string | null; q: string; to?: string }) {
+export function LoadMore({
+  initialCursor,
+  q,
+  to,
+  category,
+}: {
+  initialCursor: string | null;
+  q: string;
+  to?: string;
+  category?: string;
+}) {
   const [items, setItems] = useState<EventItem[]>([]);
   const [cursor, setCursor] = useState(initialCursor);
   const [pending, startTransition] = useTransition();
@@ -21,7 +31,7 @@ export function LoadMore({ initialCursor, q, to }: { initialCursor: string | nul
           <button
             onClick={() =>
               startTransition(async () => {
-                const page = await loadMoreEvents(cursor, q, to);
+                const page = await loadMoreEvents(cursor, q, to, category);
                 setItems((prev) => [...prev, ...page.items]);
                 setCursor(page.nextCursor);
               })

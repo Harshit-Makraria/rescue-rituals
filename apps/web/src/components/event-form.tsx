@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useActionState, useEffect, useState } from 'react';
 import { saveEvent, type FormState } from '@/app/actions';
 import type { EventItem } from '@/lib/api';
+import { CATEGORIES } from '@/lib/categories';
 import { FormError, SubmitButton } from './form-bits';
 import { Icon } from './ui';
 
@@ -175,9 +176,40 @@ export function EventForm({ event }: { event?: EventItem }) {
             name="location"
             maxLength={200}
             defaultValue={v?.location ?? event?.location ?? ''}
-            placeholder="Choose location or paste a meeting link"
+            placeholder="Venue or area, or “Online”"
             className={`${input} pl-10`}
           />
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="category" className={label}>
+            Category
+          </label>
+          <select id="category" name="category" defaultValue={v?.category ?? event?.category ?? 'other'} className={input}>
+            {CATEGORIES.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="meetingUrl" className={label}>
+            Online link <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <input
+            id="meetingUrl"
+            name="meetingUrl"
+            type="url"
+            pattern="https://.*"
+            maxLength={500}
+            defaultValue={v?.meetingUrl ?? event?.meetingUrl ?? ''}
+            placeholder="https://meet.google.com/…"
+            className={input}
+          />
+          <p className="mt-1.5 text-xs text-muted">Only you and people going can see it.</p>
         </div>
       </div>
 

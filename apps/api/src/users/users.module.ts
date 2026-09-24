@@ -39,7 +39,7 @@ class UsersService {
       orderBy: { startsAt: 'desc' },
       take: 100,
     });
-    return { items: events.map((e) => toEventResponse(e)) };
+    return { items: events.map((e) => toEventResponse(e, undefined, userId)) };
   }
 
   /** Events I'm going to or waitlisted for, soonest first. */
@@ -50,7 +50,7 @@ class UsersService {
       orderBy: { event: { startsAt: 'asc' } },
       take: 100,
     });
-    return { items: rsvps.map((r) => toEventResponse(r.event, r.status)) };
+    return { items: rsvps.map((r) => toEventResponse(r.event, r.status, userId)) };
   }
 }
 

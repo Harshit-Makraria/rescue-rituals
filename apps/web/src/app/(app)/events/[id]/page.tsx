@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CancelEventButton } from '@/components/cancel-event-button';
 import { Capacity } from '@/components/capacity';
+import { CalendarMenu, ShareButton } from '@/components/event-actions';
 import { DateStub, LocalTime } from '@/components/local-time';
 import { RsvpButton } from '@/components/rsvp-button';
 import { EventStatus } from '@/components/status-pill';
 import { Avatar, Card, Icon } from '@/components/ui';
-import { api, currentUser } from '@/lib/api';
+import { API_URL, api, currentUser } from '@/lib/api';
+import { categoryOf } from '@/lib/categories';
 
 async function getEvent(id: string) {
   const client = await api();
@@ -30,6 +32,19 @@ function reminderLabel(minutes: number | null) {
   return `${minutes} minutes before`;
 }
 
+/** Google Calendar "template" link (times in UTC, basic format). */
+function googleCalendarUrl(e: { title: string; startsAt: string; endsAt: string; description: string | null; location: string | null }) {
+  const fmt = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const sp = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: e.title,
+    dates: `${fmt(e.startsAt)}/${fmt(e.endsAt)}`,
+    details: e.description ?? '',
+    location: e.location ?? '',
+  });
+  return `https://calendar.google.com/calendar/render?${sp}`;
+}
+
 export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
   const { id } = await params;
   const client = await api();
@@ -40,6 +55,10 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
   ]);
 
   const isHost = user?.id === event.host.id;
+  const waitlist = isHost
+    ? (await client.GET('/api/v1/events/{id}/waitlist', { params: { path: { id } } })).data?.items ?? []
+    : [];
+  const category = categoryOf(event.category);
   const started = new Date(event.startsAt) <= new Date();
   const people = attendees.data?.items ?? [];
   const total = attendees.data?.total ?? event.goingCount;
@@ -87,6 +106,10 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <EventStatus event={event} />
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-surface px-2 py-0.5 text-xs font-semibold text-muted">
+                  <span className={`size-1.5 rounded-full ${category.dot}`} aria-hidden />
+                  {category.label}
+                </span>
                 {event.status === 'draft' && <span className="text-sm text-muted">Only you can see this</span>}
               </div>
               <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{event.title}</h1>
@@ -168,6 +191,26 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
               signedIn={!!user}
               closed={started || event.status !== 'published'}
             />
+            {event.hasMeetingLink &&
+              (event.meetingUrl ? (
+                <a
+                  href={event.meetingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-3 rounded-xl border border-going/30 bg-going-soft px-3 py-2.5 text-sm"
+                >
+                  <Icon name="external" size={16} className="shrink-0 text-going" />
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-going">Join online</span>
+                    <span className="block truncate text-xs text-muted">{event.meetingUrl}</span>
+                  </span>
+                </a>
+              ) : (
+                <p className="flex items-start gap-2 rounded-xl bg-raised px-3 py-2.5 text-xs text-muted">
+                  <Icon name="external" size={15} className="mt-0.5 shrink-0" />
+                  This event has an online link. It’s shared with people who are going.
+                </p>
+              ))}
             {event.reminderMinutes && !started && (
               <p className="flex items-start gap-2 rounded-xl bg-raised px-3 py-2.5 text-xs text-muted">
                 <Icon name="bell" size={15} className="mt-0.5 shrink-0" />
@@ -175,6 +218,34 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
               </p>
             )}
           </Card>
+
+          {event.status === 'published' && (
+            <div className="flex gap-2">
+              <CalendarMenu icsUrl={`${API_URL}/api/v1/events/${event.id}/calendar.ics`} googleUrl={googleCalendarUrl(event)} />
+              <ShareButton title={event.title} />
+            </div>
+          )}
+
+          {isHost && (
+            <Card className="p-5">
+              <p className="text-sm font-semibold text-muted">
+                Waitlist <span className="font-normal">· only you can see this</span>
+              </p>
+              {waitlist.length === 0 ? (
+                <p className="mt-2 text-sm text-muted">Nobody is waiting.</p>
+              ) : (
+                <ol className="mt-3 space-y-2">
+                  {waitlist.map((p, i) => (
+                    <li key={p.userId} className="flex items-center gap-3 text-sm">
+                      <span className="w-5 text-right font-semibold tabular-nums text-muted">{i + 1}</span>
+                      <Avatar name={p.name} size={28} />
+                      <span className="truncate font-medium">{p.name}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Card>
+          )}
 
           {isHost && (
             <Card className="space-y-2 p-5">

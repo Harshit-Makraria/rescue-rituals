@@ -2,6 +2,7 @@ import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, U
 import {
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
@@ -44,6 +45,16 @@ export class RsvpsController {
   @ApiNotFoundResponse({ description: "You haven't RSVP'd" })
   leave(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Promise<RsvpResponse> {
     return this.rsvps.leave(id, user.id);
+  }
+
+  /** The waitlist, in the order people will be promoted. Host only. */
+  @Get('waitlist')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: AttendeePage })
+  @ApiForbiddenResponse({ description: 'Not the host' })
+  waitlist(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Promise<AttendeePage> {
+    return this.rsvps.waitlist(id, user.id);
   }
 
   /** People going to this event, in the order they got their seat. Public. */
