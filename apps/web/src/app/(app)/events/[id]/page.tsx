@@ -45,8 +45,8 @@ function googleCalendarUrl(e: { title: string; startsAt: string; endsAt: string;
   return `https://calendar.google.com/calendar/render?${sp}`;
 }
 
-export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
-  const { id } = await params;
+export default async function EventPage({ params, searchParams }: PageProps<'/events/[id]'>) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const client = await api();
   const [event, user, attendees] = await Promise.all([
     getEvent(id),
@@ -55,13 +55,15 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
   ]);
 
   const isHost = user?.id === event.host.id;
-  const waitlist = isHost
-    ? (await client.GET('/api/v1/events/{id}/waitlist', { params: { path: { id } } })).data?.items ?? []
-    : [];
+  const guests = isHost ? (await client.GET('/api/v1/events/{id}/guests', { params: { path: { id } } })).data : null;
   const category = categoryOf(event.category);
   const started = new Date(event.startsAt) <= new Date();
   const people = attendees.data?.items ?? [];
   const total = attendees.data?.total ?? event.goingCount;
+  const joined = event.myRsvpStatus === 'going' || event.myRsvpStatus === 'waitlisted';
+  // Invite link (?join=1): show a banner with a one-tap Join, unless there's nothing to join.
+  const invited = query.join === '1' && !isHost && !joined && !started && event.status === 'published';
+  const inviteUrl = `/events/${event.id}?join=1`;
 
   const details = [
     { icon: 'calendar' as const, label: 'Date', value: <LocalTime iso={event.startsAt} mode="weekday-date" /> },
@@ -88,6 +90,39 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
         <span aria-hidden>/</span>
         <span className="truncate text-ink">{event.title}</span>
       </nav>
+
+      {invited && (
+        <Card className="border-accent/40 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-5">
+            <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-accent text-accent-ink">
+              <Icon name="ticket" size={22} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-lg font-bold">You’re invited to {event.title}</p>
+              <p className="text-sm text-muted">
+                {event.host.name} is hosting ·{' '}
+                {event.seatsLeft === 0
+                  ? 'it’s full right now, so you’ll join the waitlist'
+                  : event.seatsLeft === null
+                    ? 'open to everyone'
+                    : `${event.seatsLeft} seat${event.seatsLeft === 1 ? '' : 's'} left`}
+              </p>
+            </div>
+            <div className="w-full sm:w-64">
+              <RsvpButton
+                eventId={event.id}
+                status={event.myRsvpStatus ?? null}
+                full={event.seatsLeft === 0}
+                signedIn={!!user}
+                closed={false}
+                seatsLeft={event.seatsLeft}
+                myRsvp={event.myRsvp}
+                returnTo={inviteUrl}
+              />
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <div className="relative bg-accent-soft px-6 py-7 sm:px-8">
@@ -161,7 +196,10 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
                   <li key={p.userId} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5">
                     <Avatar name={p.name} size={34} />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{p.name}</p>
+                      <p className="truncate text-sm font-semibold">
+                        {p.name}
+                        {p.plusOnes > 0 && <span className="ml-1.5 font-medium text-muted">+{p.plusOnes}</span>}
+                      </p>
                       <p className="text-xs text-muted">
                         Joined <LocalTime iso={p.joinedAt} mode="day" />
                       </p>
@@ -190,6 +228,9 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
               full={event.seatsLeft === 0}
               signedIn={!!user}
               closed={started || event.status !== 'published'}
+              seatsLeft={event.seatsLeft}
+              myRsvp={event.myRsvp}
+              returnTo={inviteUrl}
             />
             {event.hasMeetingLink &&
               (event.meetingUrl ? (
@@ -222,29 +263,8 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
           {event.status === 'published' && (
             <div className="flex gap-2">
               <CalendarMenu icsUrl={`${API_URL}/api/v1/events/${event.id}/calendar.ics`} googleUrl={googleCalendarUrl(event)} />
-              <ShareButton title={event.title} />
+              <ShareButton title={event.title} eventId={event.id} />
             </div>
-          )}
-
-          {isHost && (
-            <Card className="p-5">
-              <p className="text-sm font-semibold text-muted">
-                Waitlist <span className="font-normal">· only you can see this</span>
-              </p>
-              {waitlist.length === 0 ? (
-                <p className="mt-2 text-sm text-muted">Nobody is waiting.</p>
-              ) : (
-                <ol className="mt-3 space-y-2">
-                  {waitlist.map((p, i) => (
-                    <li key={p.userId} className="flex items-center gap-3 text-sm">
-                      <span className="w-5 text-right font-semibold tabular-nums text-muted">{i + 1}</span>
-                      <Avatar name={p.name} size={28} />
-                      <span className="truncate font-medium">{p.name}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Card>
           )}
 
           {isHost && (
@@ -261,6 +281,72 @@ export default async function EventPage({ params }: PageProps<'/events/[id]'>) {
           )}
         </aside>
       </div>
+
+      {isHost && guests && (
+        <Card>
+          <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
+            <div className="mr-auto">
+              <h2 className="text-lg font-bold">Guest list</h2>
+              <p className="text-sm text-muted">
+                {guests.goingRsvps} RSVP{guests.goingRsvps === 1 ? '' : 's'} · {guests.goingSeats} people going
+                {guests.waitlisted > 0 && ` · ${guests.waitlisted} waitlisted`} · only you can see contact details
+              </p>
+            </div>
+            {guests.items.length > 0 && (
+              <a
+                href={`/events/${event.id}/guests.csv`}
+                className="inline-flex items-center gap-2 rounded-xl border border-line px-4 py-2 text-sm font-semibold hover:border-accent hover:text-accent"
+              >
+                <Icon name="external" size={15} /> Export CSV
+              </a>
+            )}
+          </div>
+          {guests.items.length === 0 ? (
+            <p className="px-5 py-8 text-center text-muted">No RSVPs yet. Share your invite link to get people in.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wider text-muted">
+                    <th className="px-5 py-3 font-semibold">Guest</th>
+                    <th className="px-3 py-3 font-semibold">Phone</th>
+                    <th className="px-3 py-3 font-semibold">Party</th>
+                    <th className="px-3 py-3 font-semibold">Note</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {guests.items.map((g, i) => (
+                    <tr key={g.userId} className="border-t border-line align-top">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={g.name} size={30} />
+                          <div className="min-w-0">
+                            <p className="font-semibold">{g.name}</p>
+                            <p className="text-xs text-muted">{g.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 tabular-nums">{g.phone ?? <span className="text-muted">—</span>}</td>
+                      <td className="px-3 py-3">{g.plusOnes ? `1 + ${g.plusOnes}` : '1'}</td>
+                      <td className="max-w-64 px-3 py-3 text-muted">{g.note ?? '—'}</td>
+                      <td className="px-5 py-3">
+                        {g.status === 'going' ? (
+                          <span className="rounded-md bg-going-soft px-2 py-0.5 text-xs font-semibold text-going">Going</span>
+                        ) : (
+                          <span className="rounded-md bg-wait-soft px-2 py-0.5 text-xs font-semibold text-wait">
+                            Waitlist #{i + 1 - guests.goingRsvps}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

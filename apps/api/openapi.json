@@ -628,6 +628,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RsvpDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -654,7 +664,7 @@
             "bearer": []
           }
         ],
-        "summary": "RSVP to an event. Returns `going` if you got a seat, otherwise `waitlisted`.\nSafe to retry — calling it twice never double-books.",
+        "summary": "RSVP to an event, or update your RSVP (plus-ones, phone, note). You + your\nplus-ones take seats together: `going` if they all fit, otherwise `waitlisted`.\nSafe to retry — calling it twice never double-books. The body is optional.",
         "tags": [
           "rsvps"
         ]
@@ -692,6 +702,84 @@
           }
         ],
         "summary": "Cancel your RSVP. Your seat goes to the next person on the waitlist.",
+        "tags": [
+          "rsvps"
+        ]
+      }
+    },
+    "/api/v1/events/{id}/guests": {
+      "get": {
+        "operationId": "RsvpsController_guests",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the host"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Everyone going or waitlisted, with contact details, plus-ones and notes. Host only.",
+        "tags": [
+          "rsvps"
+        ]
+      }
+    },
+    "/api/v1/events/{id}/guests.csv": {
+      "get": {
+        "operationId": "RsvpsController_guestsCsv",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV file",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the host"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The guest list as a CSV download (formula-injection safe). Host only.",
         "tags": [
           "rsvps"
         ]
@@ -1007,6 +1095,27 @@
           "goingCount"
         ]
       },
+      "MyRsvp": {
+        "type": "object",
+        "properties": {
+          "plusOnes": {
+            "type": "number"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "plusOnes",
+          "phone",
+          "note"
+        ]
+      },
       "HostResponse": {
         "type": "object",
         "properties": {
@@ -1050,6 +1159,16 @@
             "type": "string",
             "nullable": true,
             "description": "The online link. Present only for the host and people going."
+          },
+          "myRsvp": {
+            "nullable": true,
+            "description": "Your own RSVP details (plus-ones, phone, note) — present only if you have an active RSVP.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MyRsvp"
+              }
+            ]
           },
           "myRsvpStatus": {
             "nullable": true,
@@ -1346,6 +1465,32 @@
           }
         }
       },
+      "RsvpDto": {
+        "type": "object",
+        "properties": {
+          "plusOnes": {
+            "type": "number",
+            "description": "Extra people you're bringing (0–5). Each takes a seat.",
+            "example": 1,
+            "minimum": 0,
+            "maximum": 5
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "description": "Only the host can see it.",
+            "example": "+91 98765 43210",
+            "pattern": "^\\+?[0-9()\\s-]{6,30}$"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "description": "A note for the host, e.g. dietary needs. Only the host can see it.",
+            "example": "Vegetarian",
+            "maxLength": 500
+          }
+        }
+      },
       "RsvpResponse": {
         "type": "object",
         "properties": {
@@ -1361,8 +1506,12 @@
           "eventId": {
             "type": "string"
           },
-          "goingCount": {
+          "plusOnes": {
             "type": "number"
+          },
+          "goingCount": {
+            "type": "number",
+            "description": "Seats taken (people going, including plus-ones)"
           },
           "seatsLeft": {
             "type": "number",
@@ -1373,8 +1522,83 @@
         "required": [
           "status",
           "eventId",
+          "plusOnes",
           "goingCount",
           "seatsLeft"
+        ]
+      },
+      "Guest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "enum": [
+              "going",
+              "waitlisted"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "plusOnes": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When they got their seat / joined the waitlist"
+          }
+        },
+        "required": [
+          "status",
+          "userId",
+          "name",
+          "email",
+          "phone",
+          "plusOnes",
+          "note",
+          "since"
+        ]
+      },
+      "GuestList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Guest"
+            }
+          },
+          "goingRsvps": {
+            "type": "number"
+          },
+          "goingSeats": {
+            "type": "number",
+            "description": "People going, including plus-ones"
+          },
+          "waitlisted": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "goingRsvps",
+          "goingSeats",
+          "waitlisted"
         ]
       },
       "Attendee": {
@@ -1386,6 +1610,9 @@
           "name": {
             "type": "string"
           },
+          "plusOnes": {
+            "type": "number"
+          },
           "joinedAt": {
             "format": "date-time",
             "type": "string",
@@ -1395,6 +1622,7 @@
         "required": [
           "userId",
           "name",
+          "plusOnes",
           "joinedAt"
         ]
       },
@@ -1408,7 +1636,8 @@
             }
           },
           "total": {
-            "type": "number"
+            "type": "number",
+            "description": "Seats taken (people going, including plus-ones)"
           },
           "nextCursor": {
             "type": "string",

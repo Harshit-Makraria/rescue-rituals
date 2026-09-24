@@ -106,6 +106,12 @@ model Rsvp {
   eventId   String     @map("event_id") @db.Uuid
   userId    String     @map("user_id") @db.Uuid
   status    RsvpStatus
+  /// Extra people this RSVP brings; each one takes a seat
+  plusOnes  Int        @default(0) @map("plus_ones")
+  /// Host-only
+  phone     String?
+  /// Host-only
+  note      String?
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   /// Last status change — waitlist is served oldest-first by this column
   updatedAt DateTime   @default(now()) @map("updated_at") @db.Timestamptz(3)

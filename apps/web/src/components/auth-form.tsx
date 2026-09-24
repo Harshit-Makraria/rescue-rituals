@@ -11,8 +11,8 @@ const input =
 // Public demo accounts (created by the API seed, listed in the README).
 const DEMO_PASSWORD = 'Password123!';
 const DEMO_ACCOUNTS = [
-  { label: 'Sign in as host', email: 'demo@events.dev' },
-  { label: 'Sign in as guest', email: 'guest@events.dev' },
+  { label: 'Sign in as event host', email: 'demo@events.dev' },
+  { label: 'Sign in as attendee', email: 'guest@events.dev' },
 ];
 
 export function AuthForm({ mode, next }: { mode: 'login' | 'register'; next: string }) {

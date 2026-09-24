@@ -311,4 +311,86 @@ describe('Events API (e2e)', () => {
       expect(body.items.map((p: { userId: string }) => p.userId)).toEqual([b.user.id, c.user.id]);
     });
   });
+  describe('rsvp details: plus-ones, phone, note', () => {
+    const rsvp = (eventId: string, token: string, body: Record<string, unknown> = {}) =>
+      request(app.getHttpServer()).post(`/api/v1/events/${eventId}/rsvp`).set('Authorization', `Bearer ${token}`).send(body);
+
+    it('counts plus-ones as seats, and adjusts seats when the party size changes', async () => {
+      const host = await register();
+      const [a, b] = [await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, { capacity: 3 }).expect(201);
+
+      expect((await rsvp(event.id, a.accessToken, { plusOnes: 2, phone: '+91 98765 43210', note: 'Vegetarian' }).expect(200)).body)
+        .toMatchObject({ status: 'going', plusOnes: 2, goingCount: 3, seatsLeft: 0 });
+      expect((await rsvp(event.id, b.accessToken).expect(200)).body.status).toBe('waitlisted');
+
+      // A drops to +0 → frees 2 seats → B is promoted
+      expect((await rsvp(event.id, a.accessToken, { plusOnes: 0 }).expect(200)).body).toMatchObject({ status: 'going', goingCount: 2 });
+      const bView = await request(app.getHttpServer()).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${b.accessToken}`).expect(200);
+      expect(bView.body.myRsvpStatus).toBe('going');
+
+      // My own details come back to me (and keep the phone/note A set earlier)
+      const aView = await request(app.getHttpServer()).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${a.accessToken}`).expect(200);
+      expect(aView.body.myRsvp).toEqual({ plusOnes: 0, phone: '+91 98765 43210', note: 'Vegetarian' });
+    });
+
+    it('rejects adding guests when seats are short, leaving the RSVP unchanged', async () => {
+      const host = await register();
+      const [a, b] = [await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, { capacity: 2 }).expect(201);
+      await rsvp(event.id, a.accessToken).expect(200);
+      await rsvp(event.id, b.accessToken).expect(200); // full
+      await rsvp(event.id, a.accessToken, { plusOnes: 1 }).expect(409);
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: event.id } });
+      expect(row.goingCount).toBe(2);
+    });
+
+    it('never overbooks with plus-ones under 30 concurrent RSVPs', async () => {
+      const host = await register();
+      const { body: event } = await createEvent(host.accessToken, { capacity: 10 }).expect(201);
+      const guests = await Promise.all(Array.from({ length: 30 }, register));
+      const results = await Promise.all(guests.map((g) => rsvp(event.id, g.accessToken, { plusOnes: 1 })));
+      expect(results.filter((r) => r.body.status === 'going')).toHaveLength(5); // 5 parties × 2 seats
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: event.id } });
+      const going = await prisma.rsvp.findMany({ where: { eventId: event.id, status: 'going' } });
+      expect(row.goingCount).toBe(10);
+      expect(going.reduce((n, r) => n + 1 + r.plusOnes, 0)).toBe(10); // counter matches the rows
+    });
+
+    it('promotes a smaller party that fits when the first in line does not', async () => {
+      const host = await register();
+      const [a, big, small] = [await register(), await register(), await register()];
+      const { body: event } = await createEvent(host.accessToken, { capacity: 2 }).expect(201);
+      await rsvp(event.id, a.accessToken, { plusOnes: 1 }).expect(200); // takes both seats
+      await rsvp(event.id, big.accessToken, { plusOnes: 3 }).expect(200); // needs 4 → waitlisted
+      await rsvp(event.id, small.accessToken).expect(200); // needs 1 → waitlisted
+      await request(app.getHttpServer()).patch(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${host.accessToken}`).send({ capacity: 3 }).expect(200);
+      const statusOf = async (t: string) =>
+        (await request(app.getHttpServer()).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${t}`)).body.myRsvpStatus;
+      expect(await statusOf(small.accessToken)).toBe('going');
+      expect(await statusOf(big.accessToken)).toBe('waitlisted'); // keeps its place
+    });
+
+    it('shows contact details to the host only, with a formula-safe CSV', async () => {
+      const host = await register();
+      const guest = await register();
+      const { body: event } = await createEvent(host.accessToken).expect(201);
+      await rsvp(event.id, guest.accessToken, { plusOnes: 1, phone: '+1 555 010 9999', note: '=HYPERLINK("http://evil")' }).expect(200);
+      await rsvp(event.id, guest.accessToken, { phone: 'not a phone' }).expect(400);
+
+      const server = app.getHttpServer();
+      await request(server).get(`/api/v1/events/${event.id}/guests`).set('Authorization', `Bearer ${guest.accessToken}`).expect(403);
+      const { body } = await request(server).get(`/api/v1/events/${event.id}/guests`).set('Authorization', `Bearer ${host.accessToken}`).expect(200);
+      expect(body).toMatchObject({ goingRsvps: 1, goingSeats: 2, waitlisted: 0 });
+      expect(body.items[0]).toMatchObject({ phone: '+1 555 010 9999', plusOnes: 1 });
+
+      const csv = await request(server).get(`/api/v1/events/${event.id}/guests.csv`).set('Authorization', `Bearer ${host.accessToken}`).expect(200);
+      expect(csv.headers['content-type']).toContain('text/csv');
+      expect(csv.text).toContain('"\'=HYPERLINK(""http://evil"")"'); // neutralised
+      // Public attendee list never exposes phone or note
+      const pub = await request(server).get(`/api/v1/events/${event.id}/attendees`).expect(200);
+      expect(JSON.stringify(pub.body)).not.toContain('555');
+      expect(pub.body.items[0].plusOnes).toBe(1);
+    });
+  });
 });

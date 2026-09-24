@@ -91,14 +91,21 @@ export class EventsService {
     const [event, mine] = await Promise.all([
       this.prisma.event.findFirst({ where: { id, deletedAt: null }, include: eventInclude }),
       userId
-        ? this.prisma.rsvp.findUnique({ where: { eventId_userId: { eventId: id, userId } }, select: { status: true } })
+        ? this.prisma.rsvp.findUnique({
+            where: { eventId_userId: { eventId: id, userId } },
+            select: { status: true, plusOnes: true, phone: true, note: true },
+          })
         : null,
     ]);
     // Drafts are invisible to everyone but the host (404, not 403 — don't leak existence).
     if (!event || (event.status === 'draft' && event.creatorId !== userId)) {
       throw new NotFoundException('Event not found.');
     }
-    return toEventResponse(event, userId ? (mine?.status ?? null) : undefined, userId);
+    const response = toEventResponse(event, userId ? (mine?.status ?? null) : undefined, userId);
+    if (mine && mine.status !== 'cancelled') {
+      response.myRsvp = { plusOnes: mine.plusOnes, phone: mine.phone, note: mine.note };
+    }
+    return response;
   }
 
   /** iCalendar file for a published event. The private meeting link is never included. */

@@ -1,17 +1,19 @@
-import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt.guards';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
-import { AttendeePage, AttendeesQuery, RsvpResponse } from './rsvps.dto';
+import { AttendeePage, AttendeesQuery, GuestList, RsvpDto, RsvpResponse } from './rsvps.dto';
 import { RsvpsService } from './rsvps.service';
 
 @ApiTags('rsvps')
@@ -20,8 +22,9 @@ export class RsvpsController {
   constructor(private readonly rsvps: RsvpsService) {}
 
   /**
-   * RSVP to an event. Returns `going` if you got a seat, otherwise `waitlisted`.
-   * Safe to retry — calling it twice never double-books.
+   * RSVP to an event, or update your RSVP (plus-ones, phone, note). You + your
+   * plus-ones take seats together: `going` if they all fit, otherwise `waitlisted`.
+   * Safe to retry — calling it twice never double-books. The body is optional.
    */
   @Post('rsvp')
   @HttpCode(200)
@@ -32,8 +35,12 @@ export class RsvpsController {
   @ApiUnauthorizedResponse()
   @ApiNotFoundResponse()
   @ApiConflictResponse({ description: 'Event cancelled or already started' })
-  join(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Promise<RsvpResponse> {
-    return this.rsvps.join(id, user.id);
+  join(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RsvpDto,
+  ): Promise<RsvpResponse> {
+    return this.rsvps.join(id, user.id, dto);
   }
 
   /** Cancel your RSVP. Your seat goes to the next person on the waitlist. */
@@ -45,6 +52,32 @@ export class RsvpsController {
   @ApiNotFoundResponse({ description: "You haven't RSVP'd" })
   leave(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Promise<RsvpResponse> {
     return this.rsvps.leave(id, user.id);
+  }
+
+  /** Everyone going or waitlisted, with contact details, plus-ones and notes. Host only. */
+  @Get('guests')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: GuestList })
+  @ApiForbiddenResponse({ description: 'Not the host' })
+  guests(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser): Promise<GuestList> {
+    return this.rsvps.guestList(id, user.id);
+  }
+
+  /** The guest list as a CSV download (formula-injection safe). Host only. */
+  @Get('guests.csv')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiProduces('text/csv')
+  @ApiOkResponse({ description: 'CSV file', schema: { type: 'string' } })
+  @ApiForbiddenResponse({ description: 'Not the host' })
+  async guestsCsv(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser, @Res() res: Response) {
+    const { filename, body } = await this.rsvps.guestListCsv(id, user.id);
+    res
+      .type('text/csv; charset=utf-8')
+      .setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      .setHeader('Cache-Control', 'no-store')
+      .send(body);
   }
 
   /** The waitlist, in the order people will be promoted. Host only. */

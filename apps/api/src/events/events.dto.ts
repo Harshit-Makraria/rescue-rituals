@@ -165,9 +165,18 @@ export class EventResponse {
   attendeePreview: string[];
   createdAt: Date;
   updatedAt: Date;
+  /** Your own RSVP details (plus-ones, phone, note) — present only if you have an active RSVP. */
+  @ApiProperty({ type: () => MyRsvp, nullable: true, required: false })
+  myRsvp?: MyRsvp | null;
   /** The caller's RSVP status — present only when a valid token is sent. */
   @ApiProperty({ enum: RSVP_STATUSES, nullable: true, required: false })
   myRsvpStatus?: RsvpStatusValue | null;
+}
+
+export class MyRsvp {
+  plusOnes: number;
+  phone: string | null;
+  note: string | null;
 }
 
 export class EventPage {

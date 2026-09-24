@@ -248,12 +248,47 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * RSVP to an event. Returns `going` if you got a seat, otherwise `waitlisted`.
-         *     Safe to retry — calling it twice never double-books.
+         * RSVP to an event, or update your RSVP (plus-ones, phone, note). You + your
+         *     plus-ones take seats together: `going` if they all fit, otherwise `waitlisted`.
+         *     Safe to retry — calling it twice never double-books. The body is optional.
          */
         post: operations["RsvpsController_join"];
         /** Cancel your RSVP. Your seat goes to the next person on the waitlist. */
         delete: operations["RsvpsController_leave"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/events/{id}/guests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everyone going or waitlisted, with contact details, plus-ones and notes. Host only. */
+        get: operations["RsvpsController_guests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/events/{id}/guests.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The guest list as a CSV download (formula-injection safe). Host only. */
+        get: operations["RsvpsController_guestsCsv"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -363,6 +398,11 @@ export interface components {
             /** @description Events you're going to */
             goingCount: number;
         };
+        MyRsvp: {
+            plusOnes: number;
+            phone: string | null;
+            note: string | null;
+        };
         HostResponse: {
             id: string;
             name: string;
@@ -374,6 +414,8 @@ export interface components {
             category: "tech" | "music" | "food" | "sports" | "arts" | "networking" | "outdoors" | "other";
             /** @description The online link. Present only for the host and people going. */
             meetingUrl?: string | null;
+            /** @description Your own RSVP details (plus-ones, phone, note) — present only if you have an active RSVP. */
+            myRsvp?: components["schemas"]["MyRsvp"] | null;
             /**
              * @description The caller's RSVP status — present only when a valid token is sent.
              * @enum {string|null}
@@ -507,6 +549,23 @@ export interface components {
              */
             version?: number;
         };
+        RsvpDto: {
+            /**
+             * @description Extra people you're bringing (0–5). Each takes a seat.
+             * @example 1
+             */
+            plusOnes?: number;
+            /**
+             * @description Only the host can see it.
+             * @example +91 98765 43210
+             */
+            phone?: string | null;
+            /**
+             * @description A note for the host, e.g. dietary needs. Only the host can see it.
+             * @example Vegetarian
+             */
+            note?: string | null;
+        };
         RsvpResponse: {
             /**
              * @description `going` if you got a seat, `waitlisted` if the event is full.
@@ -514,13 +573,38 @@ export interface components {
              */
             status: "going" | "waitlisted" | "cancelled";
             eventId: string;
+            plusOnes: number;
+            /** @description Seats taken (people going, including plus-ones) */
             goingCount: number;
             /** @description null when capacity is unlimited */
             seatsLeft: number | null;
         };
+        Guest: {
+            /** @enum {string} */
+            status: "going" | "waitlisted";
+            userId: string;
+            name: string;
+            email: string;
+            phone: string | null;
+            plusOnes: number;
+            note: string | null;
+            /**
+             * Format: date-time
+             * @description When they got their seat / joined the waitlist
+             */
+            since: string;
+        };
+        GuestList: {
+            items: components["schemas"]["Guest"][];
+            goingRsvps: number;
+            /** @description People going, including plus-ones */
+            goingSeats: number;
+            waitlisted: number;
+        };
         Attendee: {
             userId: string;
             name: string;
+            plusOnes: number;
             /**
              * Format: date-time
              * @description When this person got their seat
@@ -529,6 +613,7 @@ export interface components {
         };
         AttendeePage: {
             items: components["schemas"]["Attendee"][];
+            /** @description Seats taken (people going, including plus-ones) */
             total: number;
             nextCursor: string | null;
         };
@@ -1005,7 +1090,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RsvpDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -1057,6 +1146,63 @@ export interface operations {
             };
             /** @description You haven't RSVP'd */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RsvpsController_guests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestList"];
+                };
+            };
+            /** @description Not the host */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RsvpsController_guestsCsv: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CSV file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            /** @description Not the host */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -103,11 +103,14 @@ export async function cancelEvent(id: string) {
 
 export type RsvpActionResult = { ok: true; result: RsvpResult } | { ok: false; error: string };
 
-export async function setRsvp(eventId: string, going: boolean): Promise<RsvpActionResult> {
+export type RsvpDetails = { plusOnes?: number; phone?: string | null; note?: string | null };
+
+/** Join / update (going = true, with optional details) or leave (going = false). */
+export async function setRsvp(eventId: string, going: boolean, details?: RsvpDetails): Promise<RsvpActionResult> {
   const client = await api();
   const opts = { params: { path: { id: eventId } } };
   const { data, error } = going
-    ? await client.POST('/api/v1/events/{id}/rsvp', opts)
+    ? await client.POST('/api/v1/events/{id}/rsvp', { ...opts, body: details ?? {} })
     : await client.DELETE('/api/v1/events/{id}/rsvp', opts);
   if (!data) return { ok: false, error: errorMessage(error) };
   refresh(); // re-render server components (attendee list, counts)

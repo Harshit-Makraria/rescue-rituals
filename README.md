@@ -14,7 +14,7 @@ The RSVP path never overbooks, even when many people join at the same moment.
 | 📮 **Postman collection** | [`docs/events-api.postman_collection.json`](docs/events-api.postman_collection.json) (live URL preset) |
 | 🎥 **Loom walkthrough** | `<add link>` |
 
-> **Demo logins** (password `Password123!`): `demo@events.dev` hosts the demo events · `guest@events.dev` for RSVPs.
+> **Demo logins** (password `Password123!`), or use the one-click buttons on the login page: **event host** `demo@events.dev` (owns the demo events: edit, cancel, guest list) · **attendee** `guest@events.dev` (RSVPs). Any user can host their own events, as on Luma or Meetup.
 > The API runs on Render's free tier. If it has been idle, the first request can take about 30 seconds while it wakes up.
 
 ---
@@ -88,7 +88,10 @@ curl -s -X POST "$API/events/<eventId>/rsvp" -H "Authorization: Bearer $TOKEN"
 - ⭐ **Categories** (Tech, Music, Food…) with filter chips, backed by a partial index that matches the pagination order
 - ⭐ **Private online links:** an event's meeting URL is revealed only to the host and people going. The authorization is per field, not per route
 - ⭐ **Add to calendar:** an RFC 5545 `.ics` download (escaped, folded, with a 1-hour alarm) plus a Google Calendar link; the private link is never included
-- ⭐ **Host-only waitlist view** in promotion order, and a **Share** button (native share sheet on phones)
+- ⭐ **RSVP details:** plus-ones (0–5, **each takes a seat**), plus phone and a note for the host, both optional. Change them any time; adding guests claims only the extra seats, removing guests frees seats for the waitlist
+- ⭐ **Host guest list:** name, email, phone, party size, note, status and waitlist position, with **CSV export** (safe against spreadsheet formula injection). Contact details are never shown to anyone else
+- ⭐ **Host-only waitlist view** in promotion order
+- ⭐ **Invite links** (`/events/:id?join=1`): opening one shows a "You're invited" banner with one-tap Join; signed-out visitors log in and return to it. Opening the link never RSVPs by itself (a GET must not change data, or link previews would sign people up)
 - ⭐ **In-app notifications:** reminders, "you're off the waitlist", time or location changes, cancellations
 - ⭐ **Concurrency-safe RSVPs:** proven by a test (50 simultaneous RSVPs for 10 seats → exactly 10 in) and verified on the live deployment
 - ⭐ **Idempotent RSVP:** double-taps and retries never double-book
@@ -172,6 +175,9 @@ erDiagram
     uuid event_id FK
     uuid user_id FK
     rsvp_status status "going | waitlisted | cancelled"
+    int plus_ones "0-5, each takes a seat"
+    text phone "host only"
+    text note "host only"
     timestamptz created_at
     timestamptz updated_at "waitlist order"
   }
@@ -200,6 +206,7 @@ erDiagram
 | `(user_id, created_at DESC)` on `notifications` | The notification inbox |
 | Partial index `(category, starts_at, id)` on published events | Category browsing uses the same keyset order as the main list |
 | `CHECK (meeting_url ~ '^https://')` | Only secure meeting links can be stored |
+| `CHECK (plus_ones BETWEEN 0 AND 5)` and length checks on phone and note | Party size and free text are bounded by the database too |
 
 **Why a denormalised `going_count`?** Event lists are read far more often than RSVPs are written. A counter that's updated in the same transaction as the RSVP row is O(1) to read, instead of a `COUNT(*)` for every card on every page load. The CHECK constraint keeps the counter honest.
 
@@ -212,9 +219,9 @@ erDiagram
 INSERT INTO rsvps (event_id, user_id, status) VALUES ($1, $2, 'waitlisted')
 ON CONFLICT (event_id, user_id) DO UPDATE SET event_id = EXCLUDED.event_id;  -- idempotent
 
-UPDATE events SET going_count = going_count + 1                                -- claim a seat
+UPDATE events SET going_count = going_count + $seats                           -- claim seats (1 + plus-ones)
  WHERE id = $1 AND status = 'published' AND starts_at > now()
-   AND (capacity IS NULL OR going_count < capacity);
+   AND (capacity IS NULL OR going_count + $seats <= capacity);
 -- 1 row updated → 'going'   ·   0 rows updated → stays 'waitlisted'
 ```
 
@@ -283,9 +290,10 @@ Base URL: `https://events-api-43jh.onrender.com/api/v1` · interactive docs: **[
 | POST | `/events` | JWT | Create an event (you become the host) |
 | PATCH | `/events/:id` | JWT · host | Update; send `version` for optimistic locking |
 | DELETE | `/events/:id` | JWT · host | Cancel the event (soft delete) |
-| POST | `/events/:id/rsvp` | JWT | RSVP → `going` or `waitlisted` (idempotent) |
+| POST | `/events/:id/rsvp` | JWT | RSVP or update it. Optional body `{ plusOnes, phone, note }` → `going` or `waitlisted` (idempotent) |
 | DELETE | `/events/:id/rsvp` | JWT | Cancel your RSVP; promotes the next person on the waitlist |
 | GET | `/events/:id/attendees` | – | People going, in the order they got a seat (paginated) |
+| GET | `/events/:id/guests` · `/events/:id/guests.csv` | JWT · host | Guest list with contact details, party sizes and notes; CSV download |
 | GET | `/events/:id/waitlist` | JWT · host | The waitlist in promotion order (403 for anyone else) |
 | GET | `/events/:id/calendar.ics` | – | iCalendar download (`text/calendar`) |
 | GET | `/users/me` | JWT | Profile with hosting and going counts |
@@ -319,6 +327,7 @@ Authorization: Bearer <token>
 - **Passwords** are hashed with **argon2id**. Login errors are generic, so they don't reveal which emails have accounts.
 - **Access token** (15 min) plus **refresh token** (7 days). Refresh tokens are **rotated** on every use, and only their SHA-256 hash is stored. Reusing an old refresh token (a sign of theft) revokes the session.
 - **Authorization:** for edits, the ownership check is part of the `UPDATE … WHERE creator_id = $user` statement itself, so there's no gap between checking and writing. Drafts return `404` to non-hosts, so their existence isn't leaked.
+- **Guest privacy:** phone numbers and notes are returned only by the host-only `/guests` endpoints. The public attendee list shows names and party sizes only. The CSV export prefixes cells starting with `=`, `+`, `-` or `@` so a guest can't plant a spreadsheet formula.
 - **Field-level authorization:** `meetingUrl` is added to a response only when the viewer is the host or has a `going` RSVP. Everyone else, including list endpoints and the `.ics` file, just gets `hasMeetingLink: true`. The rule lives in one mapper, so no endpoint can leak it by accident.
 - **Input:** a global `ValidationPipe` with `whitelist` and `forbidNonWhitelisted` rejects unknown fields (mass assignment). All SQL is parameterised, including the raw queries.
 - **Transport and headers:** `helmet`, a CORS allowlist, and `trust proxy` for real client IPs behind Render.
@@ -336,7 +345,7 @@ Next.js 16 (App Router), deployed on Vercel.
 | Route | What it does |
 |---|---|
 | `/` | Discover: featured event, date-range and **category** chips, the event table, "Load more" (cursor) |
-| `/events/[id]` | Details, category, attendee list, RSVP / waitlist / cancel, **Join online** (people going only), add to calendar, share; for the host: the waitlist and edit/cancel |
+| `/events/[id]` | Details, category, attendee list, RSVP / waitlist / cancel, **Join online** (people going only), add to calendar, copy invite link; for the host: the waitlist and edit/cancel |
 | `/events/new` · `/events/[id]/edit` | Create and edit forms: title, description, date, start and end time, location, capacity, visibility. The host picks local times; the API stores UTC. An end time before the start time means the event ends the next day |
 | `/docs` | This documentation, with rendered diagrams and an API reference generated from the OpenAPI spec |
 | `/me` | Filter list: Going · Waitlisted · Hosting · Past, with counts |
@@ -392,6 +401,10 @@ cd apps/api && npm run test:e2e
 | **Meeting links** | Hidden from anonymous users, strangers and lists; shown to the host and people going; `http://` rejected |
 | Calendar | `.ics` has the right content type, RFC 5545 escaping, and **never contains the private link** |
 | Waitlist view | Host sees it in promotion order; guests get 403 |
+| **Plus-ones** | Seats = 1 + plus-ones; shrinking a party promotes the waitlist; adding guests without enough seats → 409 and the RSVP is unchanged |
+| **Concurrency with plus-ones** | **30 simultaneous parties of 2 for 10 seats → exactly 5 parties going; the counter matches the rows** |
+| Fair promotion | A smaller party that fits is promoted ahead of a bigger one that doesn't (which keeps its place) |
+| Guest list | Host only (403 for others); CSV neutralises formulas; the public list never exposes phone numbers |
 
 ---
 
