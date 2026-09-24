@@ -2,6 +2,7 @@ import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { requestLogger } from './common/request-logger';
 
 /** Shared by main.ts and the e2e tests so tests run the real pipeline. */
 export function configureApp(app: NestExpressApplication) {
@@ -9,6 +10,7 @@ export function configureApp(app: NestExpressApplication) {
   app.set('trust proxy', 1);
   // JSON API + Swagger UI: CSP adds nothing here and breaks the docs page.
   app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(requestLogger);
 
   app.setGlobalPrefix('api/v1', { exclude: [{ path: '/', method: RequestMethod.GET }] });
 

@@ -5,29 +5,42 @@ import { saveEvent, type FormState } from '@/app/actions';
 import type { EventItem } from '@/lib/api';
 import { Field, FormError, inputClass, SubmitButton } from './form-bits';
 
-/** ISO instant → value for <input type="datetime-local"> in the viewer's timezone. */
-function toLocalInput(iso?: string) {
-  if (!iso) return '';
+const pad = (n: number) => String(n).padStart(2, '0');
+/** ISO instant → { date: "YYYY-MM-DD", time: "HH:mm" } in the viewer's timezone. */
+function toLocalParts(iso?: string) {
+  if (!iso) return { date: '', time: '' };
   const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
 }
 
 export function EventForm({ event }: { event?: EventItem }) {
   const [state, action] = useActionState<FormState, FormData>(saveEvent, undefined);
-  const [tzOffset, setTzOffset] = useState(0);
-  const [defaults, setDefaults] = useState({ startsAt: '', endsAt: '' });
+  // Local-time values are computed after mount: the server renders in UTC and
+  // doesn't know the viewer's timezone.
+  const [local, setLocal] = useState({ tzOffset: 0, date: '', startTime: '', endTime: '', minDate: '' });
   useEffect(() => {
-    setTzOffset(new Date().getTimezoneOffset());
-    setDefaults({ startsAt: toLocalInput(event?.startsAt), endsAt: toLocalInput(event?.endsAt) });
+    const start = toLocalParts(event?.startsAt);
+    const end = toLocalParts(event?.endsAt);
+    setLocal({
+      tzOffset: new Date().getTimezoneOffset(),
+      date: start.date,
+      startTime: start.time,
+      endTime: end.time,
+      minDate: toLocalParts(new Date().toISOString()).date,
+    });
   }, [event]);
 
   const v = state?.values;
+  const key = `${local.date}-${local.startTime}`; // remount date/time inputs once local values are known
 
   return (
     <form action={action} className="space-y-5">
       {event && <input type="hidden" name="id" value={event.id} />}
       {event && <input type="hidden" name="version" value={event.version} />}
-      <input type="hidden" name="tzOffset" value={tzOffset} />
+      <input type="hidden" name="tzOffset" value={local.tzOffset} />
 
       <FormError error={state?.error} />
 
@@ -55,6 +68,43 @@ export function EventForm({ event }: { event?: EventItem }) {
         />
       </Field>
 
+      <div className="grid gap-5 sm:grid-cols-3">
+        <Field label="Date">
+          <input
+            key={`d-${key}`}
+            id="date"
+            name="date"
+            type="date"
+            required
+            min={event ? undefined : local.minDate}
+            defaultValue={v?.date ?? local.date}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Start time">
+          <input
+            key={`s-${key}`}
+            id="startTime"
+            name="startTime"
+            type="time"
+            required
+            defaultValue={v?.startTime ?? local.startTime}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="End time" hint="Earlier than the start time = ends the next day.">
+          <input
+            key={`e-${key}`}
+            id="endTime"
+            name="endTime"
+            type="time"
+            required
+            defaultValue={v?.endTime ?? local.endTime}
+            className={inputClass}
+          />
+        </Field>
+      </div>
+
       <Field label="Location">
         <input
           id="location"
@@ -67,34 +117,13 @@ export function EventForm({ event }: { event?: EventItem }) {
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Starts" hint="In your local time">
-          <input
-            key={`s-${defaults.startsAt}`}
-            id="startsAt"
-            name="startsAt"
-            type="datetime-local"
-            required
-            defaultValue={v?.startsAt ?? defaults.startsAt}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Ends">
-          <input
-            key={`e-${defaults.endsAt}`}
-            id="endsAt"
-            name="endsAt"
-            type="datetime-local"
-            required
-            defaultValue={v?.endsAt ?? defaults.endsAt}
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
         <Field
           label="Capacity"
-          hint={event ? `Leave empty for unlimited. Can’t go below ${event.goingCount} (already going).` : 'Leave empty for unlimited. Extra RSVPs join a waitlist.'}
+          hint={
+            event
+              ? `Leave empty for unlimited. Can’t go below ${event.goingCount} (already going).`
+              : 'Leave empty for unlimited. Extra RSVPs join a waitlist.'
+          }
         >
           <input
             id="capacity"
@@ -113,11 +142,13 @@ export function EventForm({ event }: { event?: EventItem }) {
             defaultValue={v?.status ?? (event?.status === 'draft' ? 'draft' : 'published')}
             className={inputClass}
           >
-            <option value="published">Published — anyone can RSVP</option>
-            <option value="draft">Draft — only you can see it</option>
+            <option value="published">Published: anyone can RSVP</option>
+            <option value="draft">Draft: only you can see it</option>
           </select>
         </Field>
       </div>
+
+      <p className="text-xs text-muted">Times are in your local timezone. Attendees see them converted to theirs.</p>
 
       <SubmitButton pendingText="Saving…">{event ? 'Save changes' : 'Publish event'}</SubmitButton>
     </form>

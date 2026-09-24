@@ -11,7 +11,7 @@ export function buildOpenApi(app: INestApplication): OpenAPIObject {
         '**Try it:** `POST /api/v1/auth/login` with `demo@events.dev` / `Password123!`,',
         'copy `accessToken`, click **Authorize**, then call any endpoint.',
         '',
-        'Errors always look like `{ statusCode, error, message, path, timestamp }`.',
+        'Errors always look like `{ statusCode, error, message, path, timestamp, requestId }`.',
       ].join('\n'),
     )
     .setVersion('1.0')

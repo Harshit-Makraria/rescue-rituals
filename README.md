@@ -8,6 +8,7 @@ The RSVP path never overbooks, even when many people join at the same moment.
 |---|---|
 | 🌐 **Live web app** | **https://rescue-rituals.vercel.app** |
 | ⚙️ **API base URL** | `https://events-api-43jh.onrender.com/api/v1` |
+| 📖 **Docs (in the app)** | **https://rescue-rituals.vercel.app/docs**: this README plus a generated API reference |
 | 📘 **Swagger docs** | **https://events-api-43jh.onrender.com/docs** |
 | 🧾 **OpenAPI JSON** | https://events-api-43jh.onrender.com/docs-json |
 | 📮 **Postman collection** | [`docs/events-api.postman_collection.json`](docs/events-api.postman_collection.json) (live URL preset) |
@@ -71,6 +72,13 @@ curl -s -X POST "$API/events/<eventId>/rsvp" -H "Authorization: Bearer $TOKEN"
 - ✅ **JWT auth gating create and edit:** only signed-in users can create events, and only the **host** can edit or cancel one
 - ✅ **Data model and API docs:** ER diagram (below), Swagger at `/docs`, Postman collection
 - ✅ **Deployed:** API on Render, Postgres on Neon, web on Vercel
+
+**Frontend brief** (Events module UI, connected to the real API)
+- ✅ **Event list / browse view:** search, cards with a seats-left meter, cursor "Load more"
+- ✅ **Event detail view:** time in the viewer's timezone, location, host, attendee list
+- ✅ **Create / edit form:** title, description, **date**, **start and end time**, location (plus capacity and visibility)
+- ✅ **RSVP action:** one tap, updates instantly, with waitlist and cancel
+- ✅ **Light and dark mode:** follows the system setting, with a manual toggle that's remembered
 
 **Beyond scope**
 - ⭐ **Full-stack Next.js app** consuming the API
@@ -235,7 +243,8 @@ Authorization: Bearer <token>
 **Errors: one shape everywhere**
 ```json
 { "statusCode": 403, "error": "FORBIDDEN", "message": "Only the host can change this event.",
-  "path": "/api/v1/events/5b1e…", "timestamp": "2026-09-25T10:00:00.000Z" }
+  "path": "/api/v1/events/5b1e…", "timestamp": "2026-09-25T10:00:00.000Z",
+  "requestId": "7f9c2b1e-…" }
 ```
 `400` validation · `401` missing or invalid token · `403` not the host · `404` not found · `409` conflict (stale version, event started or cancelled, capacity below the number going) · `429` rate limited.
 
@@ -250,6 +259,7 @@ Authorization: Bearer <token>
 - **Transport and headers:** `helmet`, a CORS allowlist, and `trust proxy` for real client IPs behind Render.
 - **Rate limiting** is keyed by **user** when a token is present and by IP otherwise. Every browser request reaches the API from Vercel's server IPs, so limiting by IP alone would throttle all users together.
 - **Web sessions** live in `httpOnly`, `Secure`, `SameSite=Lax` cookies. Tokens never reach browser JavaScript, so an XSS bug can't steal them.
+- **Tracing:** every response carries an `X-Request-Id` (reused if the caller sends one). The same id appears in error bodies and in the structured JSON access logs.
 - **Secrets** live only in the Render and Vercel dashboards and are never committed; `.env` files are git-ignored.
 
 ---
@@ -262,12 +272,14 @@ Next.js 16 (App Router), deployed on Vercel.
 |---|---|
 | `/` | Upcoming events: search, cards with a seats-left meter, "Load more" (cursor) |
 | `/events/[id]` | Details, host, attendee list, RSVP / waitlist / cancel, host tools |
-| `/events/new` · `/events/[id]/edit` | Create and edit forms (the host picks times in local time; the API stores UTC) |
+| `/events/new` · `/events/[id]/edit` | Create and edit forms: title, description, date, start and end time, location, capacity, visibility. The host picks local times; the API stores UTC. An end time before the start time means the event ends the next day |
+| `/docs` | This documentation, with rendered diagrams and an API reference generated from the OpenAPI spec |
 | `/me` | Tabs: *Going & waitlisted* / *Hosting* |
 | `/login` · `/register` | Auth, with a redirect back to where the user started |
 
 - **Optimistic RSVP** (`useOptimistic`): the button updates instantly, then reconciles with the server. If the last seat went to someone else a moment earlier, it shows "waitlisted" and explains why.
 - **Server Components** for reads (fast first paint, no API token in the browser), **Server Actions** for writes.
+- **Light and dark themes:** they follow the OS by default. The toggle (system → light → dark) is stored in a cookie, so the server renders the right theme on first paint with no flash.
 - Every state is designed: loading skeletons, empty states, full, past, error. The layout is mobile-first, with dark mode and accessible markup (labels, focus states, `aria-live` RSVP feedback).
 
 ---

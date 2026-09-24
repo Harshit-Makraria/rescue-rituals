@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 
 /**
  * One error shape for every client (web, mobile, Postman):
- *   { statusCode, error, message, path, timestamp }
+ *   { statusCode, error, message, path, timestamp, requestId }
  * Stack traces are logged, never returned.
  */
 @Catch()
@@ -33,8 +33,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     }
 
+    const requestId = (req as Request & { id?: string }).id;
     if (status >= 500) {
-      this.logger.error(`${req.method} ${req.url}`, exception instanceof Error ? exception.stack : String(exception));
+      this.logger.error(
+        `${req.method} ${req.url} [${requestId}]`,
+        exception instanceof Error ? exception.stack : String(exception),
+      );
     }
 
     res.status(status).json({
@@ -43,6 +47,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       path: req.url,
       timestamp: new Date().toISOString(),
+      requestId,
     });
   }
 }

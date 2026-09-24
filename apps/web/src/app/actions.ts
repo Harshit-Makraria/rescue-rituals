@@ -52,7 +52,7 @@ export async function logout() {
  * UTC offset alongside, so we store the exact instant the host meant.
  */
 function toIso(local: string, offsetMinutes: number): string | null {
-  if (!local) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) return null;
   const asUtc = Date.parse(`${local}:00Z`);
   return Number.isNaN(asUtc) ? null : new Date(asUtc + offsetMinutes * 60_000).toISOString();
 }
@@ -61,11 +61,13 @@ export async function saveEvent(_: FormState, form: FormData): Promise<FormState
   const id = str(form, 'id');
   const offset = Number(form.get('tzOffset') ?? 0);
   const values = Object.fromEntries(
-    ['title', 'description', 'location', 'startsAt', 'endsAt', 'capacity', 'status'].map((k) => [k, str(form, k)]),
+    ['title', 'description', 'location', 'date', 'startTime', 'endTime', 'capacity', 'status'].map((k) => [k, str(form, k)]),
   );
-  const startsAt = toIso(values.startsAt, offset);
-  const endsAt = toIso(values.endsAt, offset);
-  if (!startsAt || !endsAt) return { error: 'Pick a start and end time.', values };
+  const startsAt = toIso(`${values.date}T${values.startTime}`, offset);
+  let endsAt = toIso(`${values.date}T${values.endTime}`, offset);
+  if (!startsAt || !endsAt) return { error: 'Pick a date, a start time and an end time.', values };
+  // An end time at or before the start time means the event runs past midnight.
+  if (endsAt <= startsAt) endsAt = new Date(Date.parse(endsAt) + 24 * 60 * 60_000).toISOString();
 
   const body = {
     title: values.title,
